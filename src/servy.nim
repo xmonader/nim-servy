@@ -31,55 +31,6 @@ type
 
 
   HttpCode* = distinct range[0 .. 599]
-  HttpHeaders* = ref object
-    table*: TableRef[string, seq[string]]
-
-  HttpHeaderValues* =  seq[string]
-  Request = object 
-    httpMethod*: HTTPMethod
-    requestURI*: string
-    httpVersion*: HttpVersion
-    headers*: HTTPHeaders
-    path*: string
-    body*: string
-    raw_body: string
-    queryParams*: TableRef[string, string]
-    formData*: TableRef[string, string]
-
-
-
-
-type Response = object
-  headers: HttpHeaders
-  content: string
-  httpver: HttpVersion
-  code: HttpCode
-  text: string
-
-
-
-type MiddlewareFunc = proc(req: var Request): (ref Response, bool) {.nimcall.}
-type HandlerFunc = proc(req: var Request):ref Response {.nimcall.}
-  
-type RouterValue = object
-  handlerFunc: HandlerFunc
-  middlewares:seq[MiddlewareFunc]
-
-
-type Router = object
-  table: TableRef[string, RouterValue]
-
-  
-type ServerOptions = object
-  address: string
-  port: Port
-
-type Servy = object
-  options: ServerOptions
-  router: ref Router
-  middlewares: seq[MiddlewareFunc]
-  sock: AsyncSocket
-  
 
 const
   Http100* = HttpCode(100)
@@ -194,6 +145,12 @@ proc `$`*(code: HttpCode): string =
     else: $(int(code))
 
 const headerLimit* = 10_000
+
+
+type HttpHeaders* = ref object
+      table*: TableRef[string, seq[string]]
+
+type HttpHeaderValues* =  seq[string]
 
 proc newHttpHeaders*(): HttpHeaders =
   new result
@@ -321,10 +278,80 @@ const maxLine = 8*1024
 
 
 
+
+type Request = object 
+  httpMethod*: HTTPMethod
+  requestURI*: string
+  httpVersion*: HttpVersion
+  headers*: HTTPHeaders
+  path*: string
+  body*: string
+  raw_body: string
+  queryParams*: TableRef[string, string]
+  formData*: TableRef[string, string]
+
+
+
+
+type Response = object
+  headers: HttpHeaders
+  content: string
+  httpver: HttpVersion
+  code: HttpCode
+  text: string
+
+  
 proc newResponse(): ref Response =
   new result
   result.httpver = HttpVer11
   result.headers = newHttpHeaders()
+
+type MiddlewareFunc = proc(req: var Request): (ref Response, bool) {.nimcall.}
+type HandlerFunc = proc(req: var Request):ref Response {.nimcall.}
+  
+type RouterValue = object
+  handlerFunc: HandlerFunc
+  middlewares:seq[MiddlewareFunc]
+
+type Router = object
+  table: TableRef[string, RouterValue]
+
+  
+
+proc newRouter(): ref Router =
+  result = new Router
+  result.table = newTable[string, RouterValue]()
+
+
+proc handle404(req: var Request): ref Response  = 
+  var resp = newResponse()
+  resp.code = Http404
+  resp.content = fmt"nothing at {req.path}"
+  return resp
+
+  
+proc getByPath(r: ref Router, path: string, notFoundHandler:HandlerFunc=handle404) : RouterValue =
+  if path in r.table:
+    return r.table[path]
+  else:
+    return RouterValue(handlerFunc:notFoundHandler, middlewares: @[])
+
+
+proc addHandler(router: ref Router, route: string, handler: HandlerFunc, httpMethod:HttpMethod=HttpGet, middlewares:seq[MiddlewareFunc]= @[]) = 
+  router.table.add(route, RouterValue(handlerFunc:handler, middlewares:middlewares))
+
+let addRoute = addHandler
+
+type ServerOptions = object
+  address: string
+  port: Port
+
+type Servy = object
+  options: ServerOptions
+  router: ref Router
+  middlewares: seq[MiddlewareFunc]
+  sock: AsyncSocket
+
 
 
 proc parseQueryParams(content: string): TableRef[string, string] =
@@ -550,29 +577,6 @@ proc format(resp: ref Response) : string =
   result = formatResponse(resp.code, resp.httpver, resp.content, resp.headers)
 
 
-proc newRouter(): ref Router =
-  result = new Router
-  result.table = newTable[string, RouterValue]()
-
-
-proc handle404(req: var Request): ref Response  = 
-  var resp = newResponse()
-  resp.code = Http404
-  resp.content = fmt"nothing at {req.path}"
-  return resp
-
-
-proc getByPath(r: ref Router, path: string, notFoundHandler:HandlerFunc=handle404) : RouterValue =
-  if path in r.table:
-    return r.table[path]
-  else:
-    return RouterValue(handlerFunc:notFoundHandler, middlewares: @[])
-
-
-proc addHandler(router: ref Router, route: string, handler: HandlerFunc, httpMethod:HttpMethod=HttpGet, middlewares:seq[MiddlewareFunc]= @[]) = 
-  router.table.add(route, RouterValue(handlerFunc:handler, middlewares:middlewares))
-
-let addRoute = addHandler
 
 
 
