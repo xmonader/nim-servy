@@ -1,10 +1,11 @@
 # This is just an example to get you started. A typical binary package
 # uses this file as the main entry point of the application.
 
-import strformat, tables, json, strutils, asyncdispatch, asyncnet, strutils, parseutils, options, net
+import strformat, tables, json, strutils, asyncdispatch, asyncnet, strutils, parseutils, options, net, os
 from cgi import decodeUrl
 import terminaltables
 import mimetypes
+
 
 
 type
@@ -774,12 +775,40 @@ proc serve*(s: ref Servy) {.async.} =
 
   runForever()
 
+proc stripLeadingSlashes(s: string): string =
+  var idx = 0
+  while idx < s.len:
+    if s[idx] == '/':
+      inc idx
+    else:
+      break  
+  s[idx..^1]
 
-proc newStaticMiddleware(dir: string): proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
+proc newStaticMiddleware(dir: string, onRoute="/public"): proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
   result = proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
-    let path = request.path
-    echo path
-    return (newResponse(), false)
+    # echo fmt"static middleware for route: {onRoute} to serve dir {dir}"
+    var thepath = request.path
+    var resp = newResponse()
+    if thepath.startsWith(onRoute):
+      thepath = thepath[onRoute.len..^1]  # strip the onRoute part
+      thepath = thepath.stripLeadingSlashes()
+      # echo "home: " & getHomeDir()
+      if fileExists(dir / thepath) == true:
+        resp.code = Http200
+        let m = newMimetypes()
+
+        let (parentName, dirName, ext) = splitFile(thepath)
+        resp.headers["Content-Type"] = m.getMimetype(ext)
+        # echo "result will be from " & dir / thepath
+        resp.content = readFile(dir / thepath)
+        return (resp, false)
+      else:
+        resp = abortWith("File not found.")
+    
+      # echo "static middleware thepath is " & thepath
+      return (resp, false)
+    else:
+        return (newResponse(), true)
 
 when isMainModule:
 
@@ -872,11 +901,12 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
     router.addRoute("/abort", handleAbort, HttpGet)
 
 
-    let serveTmpDir = newStaticMiddleware("/tmp")
+    let serveTmpDir = newStaticMiddleware("/tmp", "/tmppublic")
+    let serveHomeDir = newStaticMiddleware(getHomeDir(), "/homepublic")
 
 
     let opts = ServerOptions(address:"127.0.0.1", port:9000.Port)
-    var s = newServy(opts, router, @[loggingMiddleware, trimTrailingSlash, serveTmpDir])
+    var s = newServy(opts, router, @[loggingMiddleware, trimTrailingSlash, serveTmpDir, serveHomeDir])
     asyncCheck s.serve()
     echo "servy started..."
     runForever()
