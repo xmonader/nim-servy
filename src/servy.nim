@@ -328,6 +328,19 @@ proc handle404(req: var Request): ref Response  =
   return resp
 
 
+proc abortWith(msg: string): ref Response =
+  result = newResponse()
+  result.code = Http404
+  result.content = msg
+
+
+proc redirectTo(url: string, code=Http301): ref Response =
+  result = newResponse()
+  result.code = code
+  result.headers.add("Location", url)
+
+
+
 proc getByPath(r: ref Router, path: string, notFoundHandler:HandlerFunc=handle404) : (RouterValue, TableRef[string, string]) =
   var found = false
   if path in r.table: # exact match
@@ -382,6 +395,7 @@ type Servy = object
   options: ServerOptions
   router: ref Router
   middlewares: seq[MiddlewareFunc]
+  staticDir: string
   sock: AsyncSocket
 
 
@@ -744,6 +758,17 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
     router.addRoute("/greet", handleGreet, HttpGet, @[])
     router.addRoute("/greet/:username", handleGreet, HttpGet, @[])
     router.addRoute("/greet/:first/:second/:lang", handleGreet, HttpGet, @[])
+
+
+    proc handleAbort(req:var Request): ref Response =
+      result = abortWith("sorry mate")
+    
+    proc handleRedirect(req:var Request): ref Response =
+      result = redirectTo("https://python.org")
+
+    router.addRoute("/redirect", handleRedirect, HttpGet)
+    router.addRoute("/abort", handleAbort, HttpGet)
+
 
     let opts = ServerOptions(address:"127.0.0.1", port:9000.Port)
     var s = newServy(opts, router, @[loggingMiddleware, trimTrailingSlash])
