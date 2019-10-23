@@ -3,6 +3,7 @@
 
 import strformat, tables, json, strutils, asyncdispatch, asyncnet, strutils, parseutils, options, net
 from cgi import decodeUrl
+import terminaltables
 
 
 type
@@ -239,6 +240,54 @@ proc getOrDefault*(headers: HttpHeaders, key: string,
 proc len*(headers: HttpHeaders): int = return headers.table.len
 
 
+type SameSite* = enum
+    None, Strict, Lax
+
+proc buildSetCookieHeader*(cookiename, cookievalue: string, domain="", expires="", maxage=0, path="", sameSite=None, secure=false, httponly=false): string =
+  var validSeq:seq[string] = @[]
+  result = "Set-Cookie: "
+  result &= fmt"{cookiename}={cookievalue}"
+
+  if expires.len > 0:
+    validSeq.add(fmt"Expires={expires}")
+  
+  if domain.len > 0:
+    validSeq.add(fmt"Domain={domain}")
+
+  if maxage > 0:
+    validSeq.add(fmt"Max-Age={maxage}")
+  
+  if path.len > 0:
+    validSeq.add(fmt"Path={path}")
+  
+  if secure == true:
+    validSeq.add(fmt"Secure")
+
+  if httponly == true:
+    validSeq.add(fmt"HttpOnly")
+  
+  case sameSite
+  of Strict: validSeq.add("SameSite=Strict")
+  of Lax:    validSeq.add("SameSite=Lax")
+  else: discard
+
+  result &= validSeq.join("; ")
+  # Set-Cookie: <cookie-name>=<cookie-value> 
+  # Set-Cookie: <cookie-name>=<cookie-value>; Expires=<date>
+  # Set-Cookie: <cookie-name>=<cookie-value>; Max-Age=<non-zero-digit>
+  # Set-Cookie: <cookie-name>=<cookie-value>; Domain=<domain-value>
+  # Set-Cookie: <cookie-name>=<cookie-value>; Path=<path-value>
+  # Set-Cookie: <cookie-name>=<cookie-value>; Secure
+  # Set-Cookie: <cookie-name>=<cookie-value>; HttpOnly
+
+  # Set-Cookie: <cookie-name>=<cookie-value>; SameSite=Strict
+  # Set-Cookie: <cookie-name>=<cookie-value>; SameSite=Lax
+  # Set-Cookie: <cookie-name>=<cookie-value>; SameSite=None  
+
+  # // Multiple directives are also possible, for example:
+  # Set-Cookie: <cookie-name>=<cookie-value>; Domain=<domain-value>; Secure; HttpOnly
+
+
 
 proc httpMethodFromString(txt: string):  Option[HttpMethod] = 
     let s2m = {"GET": HttpGet, "POST": HttpPost, "PUT":HttpPut, "PATCH": HttpPatch, "DELETE": HttpDelete, "HEAD":HttpHead}.toTable
@@ -247,18 +296,18 @@ proc httpMethodFromString(txt: string):  Option[HttpMethod] =
     else:
         result = none(HttpMethod)
 
-proc parseList(line: string, list: var seq[string], start: int): int =
+proc parseList(line: string, list: var seq[string], start: int, sep=','): int =
   var i = 0
   var current = ""
   while start+i < line.len and line[start + i] notin {'\c', '\l'}:
     i += line.skipWhitespace(start + i)
-    i += line.parseUntil(current, {'\c', '\l', ','}, start + i)
+    i += line.parseUntil(current, {'\c', '\l', sep}, start + i)
     list.add(current)
-    if start+i < line.len and line[start + i] == ',':
+    if start+i < line.len and line[start + i] == sep:
       i.inc # Skip ,
     current.setLen(0)
 
-proc parseHeader*(line: string): tuple[key: string, value: seq[string]] =
+proc parseHeader*(line: string, sep=','): tuple[key: string, value: seq[string]] =
   ## Parses a single raw header HTTP line into key value pairs.
   ##
   ## Used by ``asynchttpserver`` and ``httpclient`` internally and should not
@@ -268,7 +317,7 @@ proc parseHeader*(line: string): tuple[key: string, value: seq[string]] =
   i = line.parseUntil(result.key, ':')
   inc(i) # skip :
   if i < len(line):
-    i += parseList(line, result.value, i)
+    i += parseList(line, result.value, i, sep=sep)
   elif result.key.len > 0:
     result.value = @[""]
   else:
@@ -279,7 +328,7 @@ const maxLine = 8*1024
 
 
 
-type Request = object 
+type Request* = object 
   httpMethod*: HTTPMethod
   requestURI*: string
   httpVersion*: HttpVersion
@@ -290,63 +339,84 @@ type Request = object
   queryParams*: TableRef[string, string]
   formData*: TableRef[string, string]
   urlParams*: TableRef[string, string]
+  cookies*: TableRef[string, string]
 
 
-type Response = object
+
+type Response* = object
   headers: HttpHeaders
   httpver: HttpVersion
   code: HttpCode
   content: string
 
   
-proc newResponse(): ref Response =
+proc newResponse*(): ref Response =
   new result
   result.httpver = HttpVer11
   result.headers = newHttpHeaders()
 
-type MiddlewareFunc = proc(req: var Request): (ref Response, bool) {.nimcall.}
-type HandlerFunc = proc(req: var Request):ref Response {.nimcall.}
+type MiddlewareFunc* = proc(req: var Request): (ref Response, bool) {.nimcall.}
+type HandlerFunc* = proc(req: var Request):ref Response {.nimcall.}
   
-type RouterValue = object
+type RouterValue* = object
   handlerFunc: HandlerFunc
+  httpMethod: HttpMethod
   middlewares:seq[MiddlewareFunc]
 
-type Router = object
+type Router* = object
   table: TableRef[string, RouterValue]
-
-  
-
-proc newRouter(): ref Router =
-  result = new Router
-  result.table = newTable[string, RouterValue]()
+  notFoundHandler: HandlerFunc
 
 
-proc handle404(req: var Request): ref Response  = 
-  var resp = newResponse()
-  resp.code = Http404
-  resp.content = fmt"nothing at {req.path}"
-  return resp
 
-
-proc abortWith(msg: string): ref Response =
+proc abortWith*(msg: string): ref Response =
   result = newResponse()
   result.code = Http404
   result.content = msg
 
 
-proc redirectTo(url: string, code=Http301): ref Response =
+proc redirectTo*(url: string, code=Http301): ref Response =
   result = newResponse()
   result.code = code
   result.headers.add("Location", url)
 
 
+    
+proc handle404*(req: var Request): ref Response  = 
+  var resp = newResponse()
+  resp.code = Http404
+  resp.content = fmt"nothing at {req.path}"
+  return resp
 
-proc getByPath(r: ref Router, path: string, notFoundHandler:HandlerFunc=handle404) : (RouterValue, TableRef[string, string]) =
+proc newRouter*(notFoundHandler:HandlerFunc=handle404): ref Router =
+  result = new Router
+  result.table = newTable[string, RouterValue]()
+  result.notFoundHandler = notFoundHandler
+
+iterator registeredRoutes*(r: ref Router): (string, string) = 
+
+  for pat, routerValue in r.table:
+    yield (pat, $routerValue.httpMethod)
+
+proc printRegisteredRoutes*(r: ref Router) =
+
+  let t = newUnicodeTable()
+  t.setHeaders(@[newCell("Method", pad=5), newCell("Route", rightpad=10)])
+
+  for pat, meth in r.registeredRoutes:
+    t.addRow(@[meth, pat])
+  
+  printTable(t)
+
+proc getByPath*(r: ref Router, path: string, httpMethod=HttpGet) : (RouterValue, TableRef[string, string]) =
   var found = false
   if path in r.table: # exact match
     return (r.table[path], newTable[string, string]())
 
   for handlerPath, routerValue in r.table.pairs:
+    if routerValue.httpMethod != httpMethod:
+      continue
+
     echo fmt"checking handler:  {handlerPath} if it matches {path}" 
     let pathParts = path.split({'/'})
     let handlerPathParts = handlerPath.split({'/'})
@@ -379,15 +449,16 @@ proc getByPath(r: ref Router, path: string, notFoundHandler:HandlerFunc=handle40
           return (routerValue, capturedParams)
 
   if not found:
-    return (RouterValue(handlerFunc:notFoundHandler, middlewares: @[]), newTable[string, string]())
+
+    return (RouterValue(handlerFunc:r.notFoundHandler, middlewares: @[]), newTable[string, string]())
 
 
-proc addHandler(router: ref Router, route: string, handler: HandlerFunc, httpMethod:HttpMethod=HttpGet, middlewares:seq[MiddlewareFunc]= @[]) = 
-  router.table.add(route, RouterValue(handlerFunc:handler, middlewares:middlewares))
+proc addRoute*(router: ref Router, route: string, handler: HandlerFunc, httpMethod:HttpMethod=HttpGet, middlewares:seq[MiddlewareFunc]= @[]) = 
+  router.table.add(route, RouterValue(handlerFunc:handler, httpMethod: httpMethod, middlewares:middlewares))
 
-let addRoute = addHandler
+let addHandler = addRoute
 
-type ServerOptions = object
+type ServerOptions* = object
   address: string
   port: Port
 
@@ -528,7 +599,7 @@ proc parseRequestFromConnection(s: ref Servy, conn:AsyncSocket): Future[Request]
     result.headers = newHttpHeaders()
 
     result.queryParams = newTable[string, string]()
-    
+    result.cookies = newTable[string, string]()
     result.formData = newTable[string, string]()
 
     if "?" in path:
@@ -541,11 +612,21 @@ proc parseRequestFromConnection(s: ref Servy, conn:AsyncSocket): Future[Request]
     line = $(await conn.recvLine(maxLength=maxLine))
     echo fmt"line: >{line}< "
     while line != "\r\n":
+      var kv: tuple[key: string, value: seq[string]]
       # a header line
-      let kv = parseHeader(line)
+      if line.toLowerAscii.startsWith("cookie"):
+        kv = parseHeader(line, sep=';')
+      else:
+        kv = parseHeader(line)
       result.headers[kv.key] = kv.value
       if kv.key.toLowerAscii == "content-length":
         contentLength = parseInt(kv.value[0])
+      if kv.key.toLowerAscii == "cookie":
+        for cookieinfo in kv.value:
+          let theparts = cookieinfo.split({'='})
+          let cookiename = theparts[0]
+          let cookieval = theparts[1]
+          result.cookies[cookiename] = cookieval
       line = $(await conn.recvLine(maxLength=maxLine))
       # echo fmt"line: >{line}< "
 
@@ -604,6 +685,17 @@ proc `$`(ver:HttpVersion): string =
       of HttpVer10: result="HTTP/1.0"
       of HttpVer11: result="HTTP/1.1"
 
+proc `$`(m:HttpMethod): string = 
+  case m
+  of HttpHead: result="HEAD"
+  of HttpGet: result= "GET"
+  of HttpPost: result="POST"
+  of HttpPut: result="PUT"
+  of HttpDelete: result="DELETE"
+  of HttpTrace: result="TRACE"
+  of HttpOptions: result="OPTIONS"
+  of HttpConnect: result="CONNECT"
+  of HttpPatch: result="PATCH"
 
 proc formatStatusLine(code: HttpCode, httpver: HttpVersion) : string =
   return fmt"{httpver} {code}" & "\r\n"
@@ -618,16 +710,17 @@ proc formatResponse(code:HttpCode, httpver:HttpVersion, content:string, headers:
   echo "will send"
   echo result
   
+
   
 
-proc format(resp: ref Response) : string = 
+proc format*(resp: ref Response) : string = 
   result = formatResponse(resp.code, resp.httpver, resp.content, resp.headers)
 
 
 
 
 
-proc newServy(options: ServerOptions, router:ref Router, middlewares:seq[MiddlewareFunc]): ref Servy =
+proc newServy*(options: ServerOptions, router:ref Router, middlewares:seq[MiddlewareFunc]): ref Servy =
   result = new Servy
   result.options = options
   result.router = router
@@ -638,7 +731,7 @@ proc newServy(options: ServerOptions, router:ref Router, middlewares:seq[Middlew
 
 
 
-proc handleClient(s: ref Servy, client: AsyncSocket) {.async.} =
+proc handleClient*(s: ref Servy, client: AsyncSocket) {.async.} =
   var req = await s.parseRequestFromConnection(client)
   
   
@@ -670,9 +763,10 @@ proc handleClient(s: ref Servy, client: AsyncSocket) {.async.} =
   await client.send(resp.format())
   echo $req.formData
 
-proc serve(s: ref Servy) {.async.} =
+proc serve*(s: ref Servy) {.async.} =
   s.sock.bindAddr(s.options.port)
   s.sock.listen()
+  s.router.printRegisteredRoutes
   while true:
     let client = await s.sock.accept()
     asyncCheck s.handleClient(client)
