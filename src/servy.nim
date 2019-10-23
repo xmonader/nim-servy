@@ -4,6 +4,7 @@
 import strformat, tables, json, strutils, asyncdispatch, asyncnet, strutils, parseutils, options, net
 from cgi import decodeUrl
 import terminaltables
+import mimetypes
 
 
 type
@@ -250,29 +251,29 @@ proc buildSetCookieHeader*(cookiename, cookievalue: string, domain="", expires="
 
   if expires.len > 0:
     validSeq.add(fmt"Expires={expires}")
-  
+
   if domain.len > 0:
     validSeq.add(fmt"Domain={domain}")
 
   if maxage > 0:
     validSeq.add(fmt"Max-Age={maxage}")
-  
+
   if path.len > 0:
     validSeq.add(fmt"Path={path}")
-  
+
   if secure == true:
     validSeq.add(fmt"Secure")
 
   if httponly == true:
     validSeq.add(fmt"HttpOnly")
-  
+
   case sameSite
   of Strict: validSeq.add("SameSite=Strict")
   of Lax:    validSeq.add("SameSite=Lax")
   else: discard
 
   result &= validSeq.join("; ")
-  # Set-Cookie: <cookie-name>=<cookie-value> 
+  # Set-Cookie: <cookie-name>=<cookie-value>
   # Set-Cookie: <cookie-name>=<cookie-value>; Expires=<date>
   # Set-Cookie: <cookie-name>=<cookie-value>; Max-Age=<non-zero-digit>
   # Set-Cookie: <cookie-name>=<cookie-value>; Domain=<domain-value>
@@ -282,14 +283,14 @@ proc buildSetCookieHeader*(cookiename, cookievalue: string, domain="", expires="
 
   # Set-Cookie: <cookie-name>=<cookie-value>; SameSite=Strict
   # Set-Cookie: <cookie-name>=<cookie-value>; SameSite=Lax
-  # Set-Cookie: <cookie-name>=<cookie-value>; SameSite=None  
+  # Set-Cookie: <cookie-name>=<cookie-value>; SameSite=None
 
   # // Multiple directives are also possible, for example:
   # Set-Cookie: <cookie-name>=<cookie-value>; Domain=<domain-value>; Secure; HttpOnly
 
 
 
-proc httpMethodFromString(txt: string):  Option[HttpMethod] = 
+proc httpMethodFromString(txt: string):  Option[HttpMethod] =
     let s2m = {"GET": HttpGet, "POST": HttpPost, "PUT":HttpPut, "PATCH": HttpPatch, "DELETE": HttpDelete, "HEAD":HttpHead}.toTable
     if txt in s2m:
         result = some(s2m[txt.toUpper])
@@ -328,7 +329,7 @@ const maxLine = 8*1024
 
 
 
-type Request* = object 
+type Request* = object
   httpMethod*: HTTPMethod
   requestURI*: string
   httpVersion*: HttpVersion
@@ -349,15 +350,15 @@ type Response* = object
   code: HttpCode
   content: string
 
-  
+
 proc newResponse*(): ref Response =
   new result
   result.httpver = HttpVer11
   result.headers = newHttpHeaders()
 
-type MiddlewareFunc* = proc(req: var Request): (ref Response, bool) {.nimcall.}
+type MiddlewareFunc* = proc(req: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.}
 type HandlerFunc* = proc(req: var Request):ref Response {.nimcall.}
-  
+
 type RouterValue* = object
   handlerFunc: HandlerFunc
   httpMethod: HttpMethod
@@ -381,8 +382,8 @@ proc redirectTo*(url: string, code=Http301): ref Response =
   result.headers.add("Location", url)
 
 
-    
-proc handle404*(req: var Request): ref Response  = 
+
+proc handle404*(req: var Request): ref Response  =
   var resp = newResponse()
   resp.code = Http404
   resp.content = fmt"nothing at {req.path}"
@@ -393,7 +394,7 @@ proc newRouter*(notFoundHandler:HandlerFunc=handle404): ref Router =
   result.table = newTable[string, RouterValue]()
   result.notFoundHandler = notFoundHandler
 
-iterator registeredRoutes*(r: ref Router): (string, string) = 
+iterator registeredRoutes*(r: ref Router): (string, string) =
 
   for pat, routerValue in r.table:
     yield (pat, $routerValue.httpMethod)
@@ -405,7 +406,7 @@ proc printRegisteredRoutes*(r: ref Router) =
 
   for pat, meth in r.registeredRoutes:
     t.addRow(@[meth, pat])
-  
+
   printTable(t)
 
 proc getByPath*(r: ref Router, path: string, httpMethod=HttpGet) : (RouterValue, TableRef[string, string]) =
@@ -417,7 +418,7 @@ proc getByPath*(r: ref Router, path: string, httpMethod=HttpGet) : (RouterValue,
     if routerValue.httpMethod != httpMethod:
       continue
 
-    echo fmt"checking handler:  {handlerPath} if it matches {path}" 
+    echo fmt"checking handler:  {handlerPath} if it matches {path}"
     let pathParts = path.split({'/'})
     let handlerPathParts = handlerPath.split({'/'})
     echo fmt"pathParts {pathParts} and handlerPathParts {handlerPathParts}"
@@ -453,7 +454,7 @@ proc getByPath*(r: ref Router, path: string, httpMethod=HttpGet) : (RouterValue,
     return (RouterValue(handlerFunc:r.notFoundHandler, middlewares: @[]), newTable[string, string]())
 
 
-proc addRoute*(router: ref Router, route: string, handler: HandlerFunc, httpMethod:HttpMethod=HttpGet, middlewares:seq[MiddlewareFunc]= @[]) = 
+proc addRoute*(router: ref Router, route: string, handler: HandlerFunc, httpMethod:HttpMethod=HttpGet, middlewares:seq[MiddlewareFunc]= @[]) =
   router.table.add(route, RouterValue(handlerFunc:handler, httpMethod: httpMethod, middlewares:middlewares))
 
 let addHandler = addRoute
@@ -503,21 +504,21 @@ type FormPart = object
       body*: string
 
 
-proc newFormPart(): ref FormPart = 
+proc newFormPart(): ref FormPart =
   new result
   result.headers = newHttpHeaders()
 
-proc `$`(this:ref FormPart): string = 
-  result = fmt"partname: {this.name} partheaders: {this.headers} partbody: {this.body}" 
+proc `$`(this:ref FormPart): string =
+  result = fmt"partname: {this.name} partheaders: {this.headers} partbody: {this.body}"
 
 type FormMultiPart = object
   parts*: TableRef[string, ref FormPart]
 
-proc newFormMultiPart(): ref FormMultiPart = 
+proc newFormMultiPart(): ref FormMultiPart =
   new result
   result.parts = newTable[string, ref FormPart]()
 
-proc `$`(this: ref FormMultiPart): string = 
+proc `$`(this: ref FormMultiPart): string =
   return fmt"parts: {this.parts}"
 
 proc parseFormData(r: Request): ref FormMultiPart =
@@ -530,15 +531,15 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
   """
 
   result = newFormMultiPart()
-  
+
   let contenttype = r.headers.getOrDefault("content-type")[0]
   let body = r.body
-  
+
   if "form-urlencoded" in contenttype.toLowerAscii():
     # query params are the post body
     let postBodyAsParams = parseQueryParams(body)
     for k, v in postBodyAsParams.pairs:
-      r.queryParams.add(k, v)     
+      r.queryParams.add(k, v)
 
   elif contenttype.startsWith("multipart/") and "boundary" in contenttype:
     var boundaryName = contenttype[contenttype.find("boundary=")+"boundary=".len..^1]
@@ -556,11 +557,11 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
             part.headers.add(splitted[0], splitted[1])
           elif len(splitted) == 1:
             part.headers.add(splitted[0], "")
-          
+
           if "content-disposition" in line.toLowerAscii and "name" in line.toLowerAscii:
             # Content-Disposition: form-data; name="next"
             var consumed = line.find("name=")+"name=".len
-            discard line.skip("\"", consumed) 
+            discard line.skip("\"", consumed)
             inc consumed
             consumed += line.parseUntil(partName, "\"", consumed)
 
@@ -568,14 +569,14 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
           break # done with headers now for the body.
 
         inc totalParsedLines
-      
+
       let content = join(bodyLines[totalParsedLines..^1], "\c\L")
       part.body = content
       part.name = partName
       result.parts.add(partName, part)
       echo $result.parts
 
-proc parseRequestFromConnection(s: ref Servy, conn:AsyncSocket): Future[Request] {.async.} = 
+proc parseRequestFromConnection(s: ref Servy, conn:AsyncSocket): Future[Request] {.async.} =
     let requestline = $await conn.recvLine(maxLength=maxLine)
     var  meth, path, httpver: string
     var parts = requestLine.splitWhitespace()
@@ -594,7 +595,7 @@ proc parseRequestFromConnection(s: ref Servy, conn:AsyncSocket): Future[Request]
         result.httpVersion = HttpVer11
     elif "1.0" in httpver:
         result.httpVersion = HttpVer10
-  
+
     result.path = path
     result.headers = newHttpHeaders()
 
@@ -604,8 +605,8 @@ proc parseRequestFromConnection(s: ref Servy, conn:AsyncSocket): Future[Request]
 
     if "?" in path:
       # has query params
-      result.queryParams = parseQueryParams(path) 
-    
+      result.queryParams = parseQueryParams(path)
+
 
     # parse headers
     var line = ""
@@ -639,8 +640,8 @@ proc parseRequestFromConnection(s: ref Servy, conn:AsyncSocket): Future[Request]
 
     result.urlParams = newTable[string, string]()
     discard result.parseFormData()
-      
-proc parseRequestString(input: string): Request = 
+
+proc parseRequestString(input: string): Request =
     let lines = input.splitLines()
     echo lines
     let requestLine = lines[0]
@@ -677,15 +678,15 @@ proc parseRequestString(input: string): Request =
     if contentLength>0:
       let remainingContent = join(lines[curLineIdx..^1], "\r\n")
       echo "remaining.. " & remainingContent
-      let content = remainingContent[0..contentLength] 
+      let content = remainingContent[0..contentLength]
       echo "ok body is : " & content
 
-proc `$`(ver:HttpVersion): string = 
+proc `$`(ver:HttpVersion): string =
       case ver
       of HttpVer10: result="HTTP/1.0"
       of HttpVer11: result="HTTP/1.1"
 
-proc `$`(m:HttpMethod): string = 
+proc `$`(m:HttpMethod): string =
   case m
   of HttpHead: result="HEAD"
   of HttpGet: result= "GET"
@@ -700,7 +701,7 @@ proc `$`(m:HttpMethod): string =
 proc formatStatusLine(code: HttpCode, httpver: HttpVersion) : string =
   return fmt"{httpver} {code}" & "\r\n"
 
-proc formatResponse(code:HttpCode, httpver:HttpVersion, content:string, headers:HttpHeaders): string = 
+proc formatResponse(code:HttpCode, httpver:HttpVersion, content:string, headers:HttpHeaders): string =
   result &= formatStatusLine(code, httpver)
   if headers.len > 0:
     for k,v in headers.pairs:
@@ -709,11 +710,11 @@ proc formatResponse(code:HttpCode, httpver:HttpVersion, content:string, headers:
   result &= content
   echo "will send"
   echo result
-  
 
-  
 
-proc format*(resp: ref Response) : string = 
+
+
+proc format*(resp: ref Response) : string =
   result = formatResponse(resp.code, resp.httpver, resp.content, resp.headers)
 
 
@@ -733,8 +734,8 @@ proc newServy*(options: ServerOptions, router:ref Router, middlewares:seq[Middle
 
 proc handleClient*(s: ref Servy, client: AsyncSocket) {.async.} =
   var req = await s.parseRequestFromConnection(client)
-  
-  
+
+
   for  m in s.middlewares:
     let (resp, usenextmiddleware) = m(req)
     if not usenextmiddleware:
@@ -748,8 +749,8 @@ proc handleClient*(s: ref Servy, client: AsyncSocket) {.async.} =
   req.urlParams = params
   let handler = routeHandler.handlerFunc
   let middlewares = routeHandler.middlewares
-  
-  
+
+
 
   for  m in middlewares:
     let (resp, usenextmiddleware) = m(req)
@@ -757,7 +758,7 @@ proc handleClient*(s: ref Servy, client: AsyncSocket) {.async.} =
       echo "early return from route middleware..."
       await client.send(resp.format())
       return
-    
+
   let resp = handler(req)
   echo "reached the handler safely.. and executing now."
   await client.send(resp.format())
@@ -772,6 +773,13 @@ proc serve*(s: ref Servy) {.async.} =
     asyncCheck s.handleClient(client)
 
   runForever()
+
+
+proc newStaticMiddleware(dir: string): proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
+  result = proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
+    let path = request.path
+    echo path
+    return (newResponse(), false)
 
 when isMainModule:
 
@@ -801,10 +809,10 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
     proc handleHello(req:var Request): ref Response =
       result = newResponse()
       result.code = Http200
-      result.content = "hello world from handler /hello" & $req 
+      result.content = "hello world from handler /hello" & $req
 
 
-    let loggingMiddleware = proc(request: var Request): (ref Response, bool) =
+    let loggingMiddleware = proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
       let path = request.path
       let headers = request.headers
       echo "==============================="
@@ -814,7 +822,7 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
       echo "==============================="
       return (newResponse(), true)
 
-    let trimTrailingSlash = proc(request: var Request): (ref Response, bool) =
+    let trimTrailingSlash = proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
       let path = request.path
       if path.endswith("/"):
         request.path = path[0..^2]
@@ -825,11 +833,11 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
       echo "path: " & request.path
       echo "==============================="
       return (newResponse(), true)
-      
+
 
     router.addRoute("/hello", handleHello)
 
-    let assertJwtFieldExists =  proc(request: var Request): (ref Response, bool) =
+    let assertJwtFieldExists =  proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
         echo $request.headers
         let jwtHeaderVals = request.headers.getOrDefault("jwt", @[""])
         let jwt = jwtHeaderVals[0]
@@ -842,13 +850,13 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
         return (newResponse(), true)
 
     router.addRoute("/bye", handleHello, HttpGet, @[assertJwtFieldExists])
-    
+
     proc handleGreet(req:var Request): ref Response =
       result = newResponse()
       result.code = Http200
-      result.content = "generic greet" & $req 
+      result.content = "generic greet" & $req
 
-        
+
     router.addRoute("/greet", handleGreet, HttpGet, @[])
     router.addRoute("/greet/:username", handleGreet, HttpGet, @[])
     router.addRoute("/greet/:first/:second/:lang", handleGreet, HttpGet, @[])
@@ -856,7 +864,7 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
 
     proc handleAbort(req:var Request): ref Response =
       result = abortWith("sorry mate")
-    
+
     proc handleRedirect(req:var Request): ref Response =
       result = redirectTo("https://python.org")
 
@@ -864,10 +872,13 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
     router.addRoute("/abort", handleAbort, HttpGet)
 
 
+    let serveTmpDir = newStaticMiddleware("/tmp")
+
+
     let opts = ServerOptions(address:"127.0.0.1", port:9000.Port)
-    var s = newServy(opts, router, @[loggingMiddleware, trimTrailingSlash])
+    var s = newServy(opts, router, @[loggingMiddleware, trimTrailingSlash, serveTmpDir])
     asyncCheck s.serve()
     echo "servy started..."
     runForever()
-  
+
   main()
