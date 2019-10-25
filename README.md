@@ -33,6 +33,22 @@ proc handleHello(req:var Request, res: var Response) =
 router.addRoute("/hello", handleHello)
 ```
 
+### Running Servy
+
+```nim
+let opts = ServerOptions(address:"127.0.0.1", port:9000.Port)
+var s = initServy(opts, router)
+s.run()
+```
+
+### Making first request
+
+using curl or your web browser go to localhost:9000/hello
+
+```
+➜  servy git:(master) ✗ curl localhost:9000/hello
+hello world from handler /hello%    
+```
 
 
 
@@ -57,9 +73,9 @@ proc handleGreet(req:var Request, res: var Response) =
     echo "lang is: " & req.urlParams["lang"]
 
 
-router.addRoute("/greet", handleGreet, HttpGet, @[])
-router.addRoute("/greet/:username", handleGreet, HttpGet, @[])
-router.addRoute("/greet/:first/:second/:lang", handleGreet, HttpGet, @[])
+router.addRoute("/greet", handleGreet, HttpGet)
+router.addRoute("/greet/:username", handleGreet, HttpGet)
+router.addRoute("/greet/:first/:second/:lang", handleGreet, HttpGet)
 
 ```
 `addRoute` takes the following params
@@ -80,7 +96,7 @@ proc handlePost(req:var Request, res: var Response) =
   res.content = $req
 
 
-router.addRoute("/post", handlePost, HttpPost, @[])
+router.addRoute("/post", handlePost, HttpPost)
 
 ```
 Here we handle `POST` on path `/post` with handler `handlePost`
