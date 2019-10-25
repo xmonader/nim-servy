@@ -1,6 +1,6 @@
 # servy
 
-experimentation in providing bottle/flask like framework for nim with support for middlewares
+Servy is HTTP server/webframework with bottle/flask familiar API
 
 
 ## Installation
