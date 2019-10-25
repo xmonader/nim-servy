@@ -419,8 +419,8 @@ type Router* = object
 
 
 
-proc abortWith*(res: var Response, msg: string) =
-  res.code = Http404
+proc abortWith*(res: var Response, msg: string, code=Http404) =
+  res.code = code
   res.content = msg
 
 
@@ -717,7 +717,7 @@ proc formatResponse(code:HttpCode, httpver:HttpVersion, content:string, headers:
   echo result
 
 
-proc format*(resp: Responsecuc) : string =
+proc format*(resp: Response) : string =
   result = formatResponse(resp.code, resp.httpver, resp.content, resp.headers)
 
 
@@ -897,8 +897,7 @@ proc basicAuth*(users: Table[string, string], realm="private", text="Access deni
     if not found or authHeader.len == 0:
       let realmstring = '"' & realm & '"'
       response.headers.add("WWW-Authenticate", fmt"Basic realm={realmstring}") 
-      response.code = Http401
-      response.content = text
+      response.abortWith("Access denied", Http401)
       return false
     else:
       return true
