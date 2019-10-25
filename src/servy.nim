@@ -773,6 +773,11 @@ proc serve*(s: Servy) {.async.} =
   runForever()
 
 
+proc run*(s: Servy) =
+  asyncCheck s.serve()
+  echo "servy started..."
+  runForever()
+
 # Helpers from jester
 proc ip*(req: Request): string =
   ## IP address of the requesting client.
@@ -838,58 +843,38 @@ proc newStaticMiddleware(dir: string, onRoute="/public"): proc(request: var Requ
     else:
         return true
 
+
+let loggingMiddleware* = proc(request: var Request,  response: var Response): bool {.closure, gcsafe, locks: 0.} =
+  let path = request.path
+  let headers = request.headers
+  echo "==============================="
+  echo "from logger handler"
+  echo "path: " & path
+  echo "headers: " & $headers
+  echo "==============================="
+  return true
+
+let trimTrailingSlash* = proc(request: var Request,  response: var Response): bool {.closure, gcsafe, locks: 0.} =
+  let path = request.path
+  if path.endswith("/"):
+    request.path = path[0..^2]
+
+  echo "==============================="
+  echo "from slash trimmer "
+  echo "path was : " & path
+  echo "path: " & request.path
+  echo "==============================="
+  return true
+
+
 when isMainModule:
 
-#   const sampleRequest = """GET /index.html HTTP/1.1
-# Host: localhost
-# Connection: keep-alive
-# Cache-Control: max-age=0
-# Upgrade-Insecure-Requests: 1
-# User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36
-# Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
-# Accept-Encoding: gzip, deflate, sdch
-# Accept-Language: en-US,en;q=0.8
-#   """
-#   echo sampleRequest
 
-  discard """
-received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion: HTTP/1.1, headers: {"accept": @["*/*"], "content-length": @["241"], "content-type": @["multipart/form-data; boundary=------------------------94f28cb187c245d8"], "host": @["127.0.0.1:9000"], "user-agent": @["curl/7.62.0-DEV"]}, path: "/post", body: "--------------------------94f28cb187c245d8\c\nContent-Disposition: form-data; name=\"who\"\c\n\c\nhamada\c\n--------------------------94f28cb187c245d8\c\nContent-Disposition: form-data; name=\"next\"\c\n\c\nhome\c\n--------------------------94f28cb187c245d8--\c\n", raw_body: "")
-received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion: HTTP/1.1, headers: {"accept": @["*/*"], "content-length": @["44"], "content-type": @["application/x-www-form-urlencoded"], "host": @["127.0.0.1:9000"], "user-agent": @["curl/7.62.0-DEV"]}, path: "/post", body: "{\"username\":\"ahmed\", \"password\":\"apassword\"}", raw_body: "")
-
-"""
-
-
-  # echo $parseRequestString(sampleRequest)
-  # echo("Hello, World!")
   proc main() =
     var router = initRouter()
     proc handleHello(req:var Request, res: var Response) =
       res.code = Http200
       res.content = "hello world from handler /hello" & $req
-
-
-    let loggingMiddleware = proc(request: var Request,  response: var Response): bool {.closure, gcsafe, locks: 0.} =
-      let path = request.path
-      let headers = request.headers
-      echo "==============================="
-      echo "from logger handler"
-      echo "path: " & path
-      # echo "headers: " & $headers
-      echo "==============================="
-      return true
-
-    let trimTrailingSlash = proc(request: var Request,  response: var Response): bool {.closure, gcsafe, locks: 0.} =
-      let path = request.path
-      if path.endswith("/"):
-        request.path = path[0..^2]
-
-      echo "==============================="
-      echo "from slash trimmer "
-      echo "path was : " & path
-      echo "path: " & request.path
-      echo "==============================="
-      return true
-
 
     router.addRoute("/hello", handleHello)
 
@@ -943,8 +928,6 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
 
     let opts = ServerOptions(address:"127.0.0.1", port:9000.Port)
     var s = initServy(opts, router, @[loggingMiddleware, trimTrailingSlash, serveTmpDir, serveHomeDir])
-    asyncCheck s.serve()
-    echo "servy started..."
-    runForever()
-
+    s.run()
+    
   main()
