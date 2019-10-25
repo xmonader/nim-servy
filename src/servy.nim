@@ -5,7 +5,7 @@ import strformat, tables, json, strutils, asyncdispatch, asyncnet, strutils, par
 from cgi import decodeUrl
 import terminaltables
 import mimetypes
-
+import base64
 
 
 type
@@ -713,11 +713,11 @@ proc formatResponse(code:HttpCode, httpver:HttpVersion, content:string, headers:
       result &= fmt"{k}: {v}" & "\r\n"
   result &= fmt"Content-Length: {content.len}" & "\r\n\r\n"
   result &= content
-  # echo "will send"
+  echo "will send"
   echo result
 
 
-proc format*(resp: Response) : string =
+proc format*(resp: Responsecuc) : string =
   result = formatResponse(resp.code, resp.httpver, resp.content, resp.headers)
 
 
@@ -879,6 +879,32 @@ let trimTrailingSlash* = proc(request: var Request,  response: var Response): bo
   return true
 
 
+
+proc basicAuth*(users: Table[string, string], realm="private", text="Access denied"): proc(request: var Request, response: var Response): bool {.closure, gcsafe, locks: 0.} =
+
+
+  result = proc(request: var Request, response: var Response): bool {.closure, gcsafe, locks: 0.} =
+
+    var processedUsers = initTable[string, string]()
+    for u, p in users:
+      let encodedAuth = encode(fmt"{u}:{p}")
+      processedUsers.add(fmt"Basic {encodedAuth}", u)
+
+    let authHeader = request.headers.getOrDefault("authorization", @[""])[0]
+
+    var found = authHeader in processedUsers
+      
+    if not found or authHeader.len == 0:
+      let realmstring = '"' & realm & '"'
+      response.headers.add("WWW-Authenticate", fmt"Basic realm={realmstring}") 
+      response.code = Http401
+      response.content = text
+      return false
+    else:
+      return true
+
+
+
 when isMainModule:
 
 
@@ -946,6 +972,12 @@ when isMainModule:
     let serveTmpDir = newStaticMiddleware("/tmp", "/tmppublic")
     let serveHomeDir = newStaticMiddleware(getHomeDir(), "/homepublic")
 
+    proc handleBasicAuth(req:var Request, res: var Response) =
+      res.code = Http200
+      res.content = "logged in!!"
+
+    let users = {"ahmed":"password", "xmon":"xmon"}.toTable
+    router.addRoute("/basicauth", handleBasicAuth, HttpGet, @[basicAuth(users)])
 
     let opts = ServerOptions(address:"127.0.0.1", port:9000.Port, debug:true)
     var s = initServy(opts, router, @[loggingMiddleware, trimTrailingSlash, serveTmpDir, serveHomeDir])
