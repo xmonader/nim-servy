@@ -370,17 +370,17 @@ type Request* = object
 
 
 proc `$`*(r: Request): string =
-  echo "*******RequestInfo*******"
-  echo "Path: " & r.path
-  echo "Method: " & $r.httpMethod
-  echo "Headers: " & $r.headers
-  echo "Cookies: " & $r.cookies
-  echo "QueryParams: " & $r.queryParams
-  echo "URLParams: " & $r.urlParams
-  echo "FormData: " & $r.formData
-  echo "***************************"
+  result.add "*******RequestInfo*******"
+  result.add "Path: " & r.path
+  result.add "Method: " & $r.httpMethod
+  result.add "Headers: " & $r.headers
+  result.add "Cookies: " & $r.cookies
+  result.add "QueryParams: " & $r.queryParams
+  result.add "URLParams: " & $r.urlParams
+  result.add "FormData: " & $r.formData
+  result.add "***************************"
   
-proc fullInfo*(r: Request): string =
+proc fullInfo*(r: Request) =
   echo "*******RequestInfo*******"
   echo "Path: " & r.path
   echo "Method: " & $r.httpMethod
