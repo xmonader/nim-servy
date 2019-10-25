@@ -501,11 +501,11 @@ proc getByPath*(r: Router, path: string, httpMethod=HttpGet) : (RouterValue, Tab
 proc addRoute*(router: var Router, route: string, handler: HandlerFunc, httpMethod:HttpMethod=HttpGet, middlewares:seq[MiddlewareFunc]= @[]) =
   router.table.add(route, RouterValue(handlerFunc:handler, httpMethod: httpMethod, middlewares:middlewares))
 
-let addHandler = addRoute
 
 type ServerOptions* = object
   address: string
   port: Port
+  debug: bool
 
 type Servy = object
   options: ServerOptions
@@ -650,6 +650,7 @@ proc parseRequestFromConnection(s: Servy, conn:AsyncSocket): Future[Request] {.a
 
     if "?" in path:
       # has query params
+      # todo use decodeFields from cgi 
       result.queryParams = parseQueryParams(path)
 
 
@@ -728,7 +729,10 @@ proc initServy*(options: ServerOptions, router: Router, middlewares:seq[Middlewa
   result.sock = newAsyncSocket()
   result.sock.setSockOpt(OptReuseAddr, true)
 
-
+template logMsg(m: string) : untyped = 
+  if s.options.debug:
+    echo m
+  
 proc handleClient*(s: Servy, client: AsyncSocket) {.async.} =
   var req = await s.parseRequestFromConnection(client)
   var res = initResponse()
@@ -737,11 +741,11 @@ proc handleClient*(s: Servy, client: AsyncSocket) {.async.} =
   for  m in s.middlewares:
     let usenextmiddleware = m(req, res)
     if not usenextmiddleware:
-      echo "early return from middleware..."
+      logMsg "early return from middleware..."
       await client.send(res.format())
       return
-
-  echo "received request from client: " & $req
+  
+  logMsg "received request from client: " & $req
 
   let (routeHandler, params) = s.router.getByPath(req.path, req.httpMethod)
   req.urlParams = params
@@ -753,19 +757,19 @@ proc handleClient*(s: Servy, client: AsyncSocket) {.async.} =
   for  m in middlewares:
     let usenextmiddleware = m(req, res)
     if not usenextmiddleware:
-      echo "early return from route middleware..."
+      logMsg "early return from route middleware..."
       await client.send(res.format())
       return
 
   handler(req,res)
-  echo "reached the handler safely.. and executing now."
+  
+  logMsg "reached the handler safely.. and executing now."
   await client.send(res.format())
   # echo $req.formData
 
 proc serve*(s: Servy) {.async.} =
   s.sock.bindAddr(s.options.port)
   s.sock.listen()
-  s.router.printRegisteredRoutes
   while true:
     let client = await s.sock.accept()
     asyncCheck s.handleClient(client)
@@ -774,8 +778,10 @@ proc serve*(s: Servy) {.async.} =
 
 
 proc run*(s: Servy) =
+  if s.options.debug == true:
+    s.router.printRegisteredRoutes()
   asyncCheck s.serve()
-  echo "servy started..."
+  echo fmt"servy started...{s.options}"
   runForever()
 
 # Helpers from jester
@@ -824,6 +830,13 @@ proc stripLeadingSlashes(s: string): string =
 
 proc newStaticMiddleware*(dir: string, onRoute="/public"): proc(request: var Request, response: var Response): bool {.closure, gcsafe, locks: 0.} =
   result = proc(request: var Request, response: var Response): bool {.closure, gcsafe, locks: 0.} =
+    
+    # TODO:
+    # check for method to be get/head
+    # check for suitable caching headers
+    # path resolvers
+    # exculding certain files
+    # index
     var thepath = request.path
     if thepath.startsWith(onRoute):
       thepath = thepath[onRoute.len..^1]  # strip the onRoute part
@@ -838,7 +851,6 @@ proc newStaticMiddleware*(dir: string, onRoute="/public"): proc(request: var Req
         return false
       else:
         response.abortWith("File not found.")
-    
       return false
     else:
         return true
@@ -935,7 +947,7 @@ when isMainModule:
     let serveHomeDir = newStaticMiddleware(getHomeDir(), "/homepublic")
 
 
-    let opts = ServerOptions(address:"127.0.0.1", port:9000.Port)
+    let opts = ServerOptions(address:"127.0.0.1", port:9000.Port, debug:true)
     var s = initServy(opts, router, @[loggingMiddleware, trimTrailingSlash, serveTmpDir, serveHomeDir])
     s.run()
     
