@@ -2,11 +2,17 @@
 
 experimentation in providing bottle/flask like framework for nim with support for middlewares
 
+
+## Installation
+
+`nimble install servy`
+
 ## quickstart
 
 ### First create the router
 
 ```nim
+import servy
 var router = initRouter()
 
 ```
@@ -127,7 +133,8 @@ if you want to terminate the middleware chain return false
 
 
 ### Trim slashes Middleware
-```
+
+```nim
 let trimTrailingSlash = proc(request: var Request,  response: var Response): bool {.closure, gcsafe, locks: 0.} =
   let path = request.path
   if path.endswith("/"):
