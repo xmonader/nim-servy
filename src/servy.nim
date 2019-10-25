@@ -211,6 +211,10 @@ proc add*(headers: HttpHeaders, key, value: string) =
   else:
     headers.table[key.toLowerAscii].add(value)
 
+proc addMany*(headers: HttpHeaders, key:string, value: seq[string]) = 
+  for val in value:
+    headers.add(key, val)
+
 proc del*(headers: HttpHeaders, key: string) =
   ## Delete the header entries associated with ``key``
   headers.table.del(key.toLowerAscii)
@@ -328,6 +332,29 @@ proc parseHeader*(line: string, sep=','): tuple[key: string, value: seq[string]]
 const maxLine = 8*1024
 
 
+type FormPart = object
+      name*: string
+      headers*: HttpHeaders
+      fileName*: string
+      body*: string
+
+
+proc newFormPart(): ref FormPart =
+  new result
+  result.headers = newHttpHeaders()
+
+proc `$`(this:ref FormPart): string =
+  result = fmt"name: {this.name} filename: {this.fileName} headers: {this.headers} body: {this.body}"
+
+type FormMultiPart = object
+  parts*: TableRef[string, ref FormPart]
+
+proc newFormMultiPart(): ref FormMultiPart =
+  new result
+  result.parts = newTable[string, ref FormPart]()
+
+proc `$`(this: ref FormMultiPart): string =
+  return fmt"parts: {this.parts}"
 
 
 type Request* = object
@@ -339,11 +366,35 @@ type Request* = object
   body*: string
   raw_body: string
   queryParams*: TableRef[string, string]
-  formData*: TableRef[string, string]
+  formData*: ref FormMultiPart
   urlParams*: TableRef[string, string]
   cookies*: TableRef[string, string]
 
 
+proc `$`*(r: Request): string =
+  echo "*******RequestInfo*******"
+  echo "Path: " & r.path
+  echo "Method: " & $r.httpMethod
+  echo "Headers: " & $r.headers
+  echo "Cookies: " & $r.cookies
+  echo "QueryParams: " & $r.queryParams
+  echo "URLParams: " & $r.urlParams
+  echo "FormData: " & $r.formData
+  echo "***************************"
+  
+proc fullInfo*(r: Request): string =
+  echo "*******RequestInfo*******"
+  echo "Path: " & r.path
+  echo "Method: " & $r.httpMethod
+  echo "HTTP VER: " & $r.httpVersion
+  echo "Headers: " & $r.headers
+  echo "Cookies: " & $r.cookies
+  echo "QueryParams: " & $r.queryParams
+  echo "URLParams: " & $r.urlParams
+  echo "FormData: " & $r.formData
+  echo "Body: "
+  echo r.body
+  echo "***************************"
 
 type Response* = object
   headers: HttpHeaders
@@ -419,13 +470,13 @@ proc getByPath*(r: ref Router, path: string, httpMethod=HttpGet) : (RouterValue,
     if routerValue.httpMethod != httpMethod:
       continue
 
-    echo fmt"checking handler:  {handlerPath} if it matches {path}"
+    # echo fmt"checking handler:  {handlerPath} if it matches {path}"
     let pathParts = path.split({'/'})
     let handlerPathParts = handlerPath.split({'/'})
-    echo fmt"pathParts {pathParts} and handlerPathParts {handlerPathParts}"
+    # echo fmt"pathParts {pathParts} and handlerPathParts {handlerPathParts}"
 
     if len(pathParts) != len(handlerPathParts):
-      echo "length isn't ok"
+      # echo "length isn't ok"
       continue
     else:
       var idx = 0
@@ -434,10 +485,10 @@ proc getByPath*(r: ref Router, path: string, httpMethod=HttpGet) : (RouterValue,
       while idx<len(pathParts):
         let pathPart = pathParts[idx]
         let handlerPathPart = handlerPathParts[idx]
-        echo fmt"current pathPart {pathPart} current handlerPathPart: {handlerPathPart}"
+        # echo fmt"current pathPart {pathPart} current handlerPathPart: {handlerPathPart}"
 
         if handlerPathPart.startsWith(":") or handlerPathPart.startsWith("@"):
-          echo fmt"found var in path {handlerPathPart} matches {pathPart}"
+          # echo fmt"found var in path {handlerPathPart} matches {pathPart}"
           capturedParams[handlerPathPart[1..^1]] = pathPart
           inc idx
         else:
@@ -496,31 +547,7 @@ proc parseQueryParams(content: string): TableRef[string, string] =
     inc consumed
     # result[decodeUrl(key)] = result[decodeUrl(val)]
     result.add(decodeUrl(key), decodeUrl(val))
-    echo "consumed:" & $consumed
-    echo "contentlen:" & $content.len
 
-type FormPart = object
-      name*: string
-      headers*: HttpHeaders
-      body*: string
-
-
-proc newFormPart(): ref FormPart =
-  new result
-  result.headers = newHttpHeaders()
-
-proc `$`(this:ref FormPart): string =
-  result = fmt"partname: {this.name} partheaders: {this.headers} partbody: {this.body}"
-
-type FormMultiPart = object
-  parts*: TableRef[string, ref FormPart]
-
-proc newFormMultiPart(): ref FormMultiPart =
-  new result
-  result.parts = newTable[string, ref FormPart]()
-
-proc `$`(this: ref FormMultiPart): string =
-  return fmt"parts: {this.parts}"
 
 proc parseFormData(r: Request): ref FormMultiPart =
 
@@ -536,6 +563,7 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
   let contenttype = r.headers.getOrDefault("content-type")[0]
   let body = r.body
 
+
   if "form-urlencoded" in contenttype.toLowerAscii():
     # query params are the post body
     let postBodyAsParams = parseQueryParams(body)
@@ -544,27 +572,53 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
 
   elif contenttype.startsWith("multipart/") and "boundary" in contenttype:
     var boundaryName = contenttype[contenttype.find("boundary=")+"boundary=".len..^1]
-    echo "boundayName: " & boundaryName
-    for partString in body.split(boundaryName & "\c\L"):
+    let formStart = fmt"--{boundaryName}"
+    let formEnd = fmt"--{boundaryName}--"
+    let partStart = formStart
+
+    let formBody = body[body.find(formStart)..body.find(formEnd)]
+
+    for partString in formBody.split(partStart & "\c\L"):
+
+      echo "start partstring: "
+      echo partString
+      echo "end partstring:"
       var part = newFormPart()
       var partName = ""
 
       var totalParsedLines = 1
-      let bodyLines = body.split("\c\L")[1..^1] # at the boundary line
+      let bodyLines = partString.splitLines()
       for line in bodyLines:
-        if line.strip().len != 0:
-          let splitted = line.split(": ")
-          if len(splitted) == 2:
-            part.headers.add(splitted[0], splitted[1])
-          elif len(splitted) == 1:
-            part.headers.add(splitted[0], "")
-
-          if "content-disposition" in line.toLowerAscii and "name" in line.toLowerAscii:
-            # Content-Disposition: form-data; name="next"
-            var consumed = line.find("name=")+"name=".len
-            discard line.skip("\"", consumed)
-            inc consumed
-            consumed += line.parseUntil(partName, "\"", consumed)
+        # if line.strip().len != 0:
+        #   let splitted = line.split(": ")
+        #   if len(splitted) == 2:
+        #     part.headers.add(splitted[0], splitted[1])
+        #   elif len(splitted) == 1:
+        var kv: tuple[key: string, value: seq[string]]
+        if line.contains(":") == true:
+          if line.contains(";") == true:
+            kv = parseHeader(line, sep=';')
+          else:
+            kv = parseHeader(line)
+        
+          part.headers.addMany(kv.key, kv.value)
+          if "content-disposition" in kv.key.toLowerAscii:
+            for v in kv.value:
+              if v.startswith("name="):
+                var consumed = "name=".len
+                discard line.skip("\"", consumed)
+                inc consumed
+                consumed += v.parseUntil(partName, "\"", consumed)
+                part.name = partName
+                inc consumed
+              if v.startsWith("filename="):
+                var consumed = v.find("filename=") + "filename=".len
+                discard line.skip("\"", consumed)
+                inc consumed
+                var fileName = ""
+                consumed += v.parseUntil(fileName, "\"", consumed)
+                part.fileName = fileName
+                inc consumed
 
         else:
           break # done with headers now for the body.
@@ -572,10 +626,13 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
         inc totalParsedLines
 
       let content = join(bodyLines[totalParsedLines..^1], "\c\L")
+      echo ">>>>>>CNT"
+      echo content
+      echo "<<<<<<ENDCNT"
+
       part.body = content
-      part.name = partName
       result.parts.add(partName, part)
-      echo $result.parts
+      # echo $result.parts
 
 proc parseRequestFromConnection(s: ref Servy, conn:AsyncSocket): Future[Request] {.async.} =
     let requestline = $await conn.recvLine(maxLength=maxLine)
@@ -585,13 +642,13 @@ proc parseRequestFromConnection(s: ref Servy, conn:AsyncSocket): Future[Request]
     path = parts[1]
     httpver = parts[2]
     var contentLength = 0
-    echo meth, path, httpver
+    # echo meth, path, httpver
     let m = httpMethodFromString(meth)
     if m.isSome:
         result.httpMethod = m.get()
     else:
-        echo meth
-        raise newException(OSError, "invalid httpmethod")
+        # echo meth
+        raise newException(OSError, "invalid httpmethod "& meth)
     if "1.1" in httpver:
         result.httpVersion = HttpVer11
     elif "1.0" in httpver:
@@ -602,7 +659,7 @@ proc parseRequestFromConnection(s: ref Servy, conn:AsyncSocket): Future[Request]
 
     result.queryParams = newTable[string, string]()
     result.cookies = newTable[string, string]()
-    result.formData = newTable[string, string]()
+    result.formData = newFormMultiPart()
 
     if "?" in path:
       # has query params
@@ -612,7 +669,7 @@ proc parseRequestFromConnection(s: ref Servy, conn:AsyncSocket): Future[Request]
     # parse headers
     var line = ""
     line = $(await conn.recvLine(maxLength=maxLine))
-    echo fmt"line: >{line}< "
+    # echo fmt"line: >{line}< "
     while line != "\r\n":
       var kv: tuple[key: string, value: seq[string]]
       # a header line
@@ -640,47 +697,7 @@ proc parseRequestFromConnection(s: ref Servy, conn:AsyncSocket): Future[Request]
       # echo "ok body is : " & result.body
 
     result.urlParams = newTable[string, string]()
-    discard result.parseFormData()
-
-proc parseRequestString(input: string): Request =
-    let lines = input.splitLines()
-    echo lines
-    let requestLine = lines[0]
-    var  meth, path, httpver: string
-    var parts = requestLine.splitWhitespace()
-    meth = parts[0]
-    path = parts[1]
-    httpver = parts[2]
-    var contentLength = 0
-
-    echo meth, path, httpver
-    let m = httpMethodFromString(meth)
-    if m.isSome:
-        result.httpMethod = m.get()
-    else:
-        echo meth
-        raise newException(OSError, "invalid httpmethod")
-    if "1.1" in httpver:
-        result.httpVersion = HttpVer11
-    elif "1.0" in httpver:
-        result.httpVersion = HttpVer10
-
-    result.path = path
-    result.headers = newHttpHeaders()
-    # parse headers
-    var curLineIdx = 1
-    while curLineIdx<lines.len and lines[curLineIdx] != "\r\n":
-      # a header line
-      let kv = parseHeader(lines[curLineIdx])
-      result.headers[kv.key] = kv.value
-      if kv.key.toLowerAscii == "content-length":
-        contentLength = parseInt(kv.value[0])
-      inc(curLineIdx)
-    if contentLength>0:
-      let remainingContent = join(lines[curLineIdx..^1], "\r\n")
-      echo "remaining.. " & remainingContent
-      let content = remainingContent[0..contentLength]
-      echo "ok body is : " & content
+    result.formData = result.parseFormData()
 
 proc `$`(ver:HttpVersion): string =
       case ver
@@ -709,17 +726,12 @@ proc formatResponse(code:HttpCode, httpver:HttpVersion, content:string, headers:
       result &= fmt"{k}: {v}" & "\r\n"
   result &= fmt"Content-Length: {content.len}" & "\r\n\r\n"
   result &= content
-  echo "will send"
+  # echo "will send"
   echo result
-
-
 
 
 proc format*(resp: ref Response) : string =
   result = formatResponse(resp.code, resp.httpver, resp.content, resp.headers)
-
-
-
 
 
 proc newServy*(options: ServerOptions, router:ref Router, middlewares:seq[MiddlewareFunc]): ref Servy =
@@ -763,7 +775,7 @@ proc handleClient*(s: ref Servy, client: AsyncSocket) {.async.} =
   let resp = handler(req)
   echo "reached the handler safely.. and executing now."
   await client.send(resp.format())
-  echo $req.formData
+  # echo $req.formData
 
 proc serve*(s: ref Servy) {.async.} =
   s.sock.bindAddr(s.options.port)
@@ -774,6 +786,42 @@ proc serve*(s: ref Servy) {.async.} =
     asyncCheck s.handleClient(client)
 
   runForever()
+
+
+# Helpers from jester
+proc ip*(req: Request): string =
+  ## IP address of the requesting client.
+  let headers = req.headers
+  if headers.hasKey("REMOTE_ADDR"):
+    result = headers["REMOTE_ADDR"][0]
+  if headers.hasKey("x-forwarded-for"):
+    result = headers["x-forwarded-for"][0] 
+
+proc params*(req: Request): TableRef[string, string] =
+  ## Parameters from the pattern and the query string.
+  result = req.urlParams
+
+
+proc secure*(req: Request): bool =
+  if req.headers.hasKey("x-forwarded-proto"):
+    let proto = req.headers["x-forwarded-proto"][0]
+    case proto.toLowerAscii()
+    of "https":
+      result = true
+    of "http":
+      result = false
+    else:
+      result = false
+
+proc port*(req: Request): int =
+  if (let p = req.headers.getOrDefault("SERVER_PORT")[0]; p != ""):
+    result = p.parseInt
+  else:
+    result = if req.secure: 443 else: 80
+
+proc host*(req: Request): string =
+  req.headers.getOrDefault("HOST")[0]
+
 
 proc stripLeadingSlashes(s: string): string =
   var idx = 0
@@ -786,43 +834,39 @@ proc stripLeadingSlashes(s: string): string =
 
 proc newStaticMiddleware(dir: string, onRoute="/public"): proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
   result = proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
-    # echo fmt"static middleware for route: {onRoute} to serve dir {dir}"
     var thepath = request.path
     var resp = newResponse()
     if thepath.startsWith(onRoute):
       thepath = thepath[onRoute.len..^1]  # strip the onRoute part
       thepath = thepath.stripLeadingSlashes()
-      # echo "home: " & getHomeDir()
       if fileExists(dir / thepath) == true:
         resp.code = Http200
         let m = newMimetypes()
 
         let (parentName, dirName, ext) = splitFile(thepath)
         resp.headers["Content-Type"] = m.getMimetype(ext)
-        # echo "result will be from " & dir / thepath
         resp.content = readFile(dir / thepath)
         return (resp, false)
       else:
         resp = abortWith("File not found.")
     
-      # echo "static middleware thepath is " & thepath
       return (resp, false)
     else:
         return (newResponse(), true)
 
 when isMainModule:
 
-  const sampleRequest = """GET /index.html HTTP/1.1
-Host: localhost
-Connection: keep-alive
-Cache-Control: max-age=0
-Upgrade-Insecure-Requests: 1
-User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36
-Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
-Accept-Encoding: gzip, deflate, sdch
-Accept-Language: en-US,en;q=0.8
-  """
-  echo sampleRequest
+#   const sampleRequest = """GET /index.html HTTP/1.1
+# Host: localhost
+# Connection: keep-alive
+# Cache-Control: max-age=0
+# Upgrade-Insecure-Requests: 1
+# User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36
+# Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+# Accept-Encoding: gzip, deflate, sdch
+# Accept-Language: en-US,en;q=0.8
+#   """
+#   echo sampleRequest
 
   discard """
 received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion: HTTP/1.1, headers: {"accept": @["*/*"], "content-length": @["241"], "content-type": @["multipart/form-data; boundary=------------------------94f28cb187c245d8"], "host": @["127.0.0.1:9000"], "user-agent": @["curl/7.62.0-DEV"]}, path: "/post", body: "--------------------------94f28cb187c245d8\c\nContent-Disposition: form-data; name=\"who\"\c\n\c\nhamada\c\n--------------------------94f28cb187c245d8\c\nContent-Disposition: form-data; name=\"next\"\c\n\c\nhome\c\n--------------------------94f28cb187c245d8--\c\n", raw_body: "")
@@ -847,7 +891,7 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
       echo "==============================="
       echo "from logger handler"
       echo "path: " & path
-      echo "headers: " & $headers
+      # echo "headers: " & $headers
       echo "==============================="
       return (newResponse(), true)
 
@@ -867,7 +911,7 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
     router.addRoute("/hello", handleHello)
 
     let assertJwtFieldExists =  proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
-        echo $request.headers
+        # echo $request.headers
         let jwtHeaderVals = request.headers.getOrDefault("jwt", @[""])
         let jwt = jwtHeaderVals[0]
         echo "================\n\njwt middleware"
@@ -890,6 +934,16 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
     router.addRoute("/greet/:username", handleGreet, HttpGet, @[])
     router.addRoute("/greet/:first/:second/:lang", handleGreet, HttpGet, @[])
 
+
+
+
+    proc handleHandlePost(req:var Request): ref Response =
+      result = newResponse()
+      result.code = Http200
+      result.content = $req
+
+
+    router.addRoute("/post", handleHandlePost, HttpPost, @[])
 
     proc handleAbort(req:var Request): ref Response =
       result = abortWith("sorry mate")
