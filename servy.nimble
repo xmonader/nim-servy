@@ -2,7 +2,7 @@
 
 version       = "0.1.0"
 author        = "xmonader"
-description   = "a down to earth webserver in nim"
+description   = "a down to earth webframework in nim"
 license       = "MIT"
 srcDir        = "src"
 bin           = @["servy"]

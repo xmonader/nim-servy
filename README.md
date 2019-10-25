@@ -34,9 +34,21 @@ router.addRoute("/hello", handleHello)
 
 ```nim
 
+
 proc handleGreet(req:var Request, res: var Response) =
   res.code = Http200
   res.content = "generic greet" & $req
+  if "username" in req.urlParams:
+    echo "username is: " & req.urlParams["username"]
+  
+  if "first" in req.urlParams:
+    echo "first is: " & req.urlParams["first"]
+
+  if "second" in req.urlParams:
+    echo "second is: " & req.urlParams["second"]
+
+  if "lang" in req.urlParams:
+    echo "lang is: " & req.urlParams["lang"]
 
 
 router.addRoute("/greet", handleGreet, HttpGet, @[])
@@ -66,6 +78,7 @@ router.addRoute("/post", handlePost, HttpPost, @[])
 
 ```
 Here we handle `POST` on path `/post` with handler `handlePost`
+- `formData` table is available on the request body handling both `multipart` and `x-www-form-urlencoded` post formats
 
 
 ### Abort
