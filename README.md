@@ -1,6 +1,6 @@
 # servy
 
-Servy is HTTP server/webframework with bottle/flask familiar API
+Servy is a fast, simple and lightweight micro web-framework for Nim
 
 
 ## Installation
