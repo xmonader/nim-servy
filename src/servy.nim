@@ -274,7 +274,7 @@ proc buildSetCookieHeader*(cookiename, cookievalue: string, domain="", expires="
 
   case sameSite
   of Strict: validSeq.add("SameSite=Strict")
-  of Lax:    validSeq.add("SameSite=Lax")
+  of Lax:   validSeq.add("SameSite=Lax")
   else: discard
 
   result &= validSeq.join("; ")
@@ -295,7 +295,7 @@ proc buildSetCookieHeader*(cookiename, cookievalue: string, domain="", expires="
 
 
 
-proc httpMethodFromString(txt: string):  Option[HttpMethod] =
+proc httpMethodFromString(txt: string): Option[HttpMethod] =
     let s2m = {"GET": HttpGet, "POST": HttpPost, "PUT":HttpPut, "PATCH": HttpPatch, "DELETE": HttpDelete, "HEAD":HttpHead}.toTable
     if txt in s2m:
         result = some(s2m[txt.toUpper])
@@ -339,21 +339,19 @@ type FormPart = object
       body*: string
 
 
-proc newFormPart(): ref FormPart =
-  new result
+proc initFormPart(): FormPart =
   result.headers = newHttpHeaders()
 
-proc `$`(this:ref FormPart): string =
+proc `$`(this: FormPart): string =
   result = fmt"name: {this.name} filename: {this.fileName} headers: {this.headers} body: {this.body}"
 
 type FormMultiPart = object
-  parts*: TableRef[string, ref FormPart]
+  parts*: Table[string,  FormPart]
 
-proc newFormMultiPart(): ref FormMultiPart =
-  new result
-  result.parts = newTable[string, ref FormPart]()
+proc initFormMultiPart(): FormMultiPart =
+  result.parts = initTable[string,  FormPart]()
 
-proc `$`(this: ref FormMultiPart): string =
+proc `$`(this: FormMultiPart): string =
   return fmt"parts: {this.parts}"
 
 
@@ -365,10 +363,10 @@ type Request* = object
   path*: string
   body*: string
   raw_body: string
-  queryParams*: TableRef[string, string]
-  formData*: ref FormMultiPart
-  urlParams*: TableRef[string, string]
-  cookies*: TableRef[string, string]
+  queryParams*: Table[string, string]
+  formData*: FormMultiPart
+  urlParams*: Table[string, string]
+  cookies*: Table[string, string]
 
 
 proc `$`*(r: Request): string =
@@ -403,13 +401,12 @@ type Response* = object
   content: string
 
 
-proc newResponse*(): ref Response =
-  new result
+proc initResponse*(): Response =
   result.httpver = HttpVer11
   result.headers = newHttpHeaders()
 
-type MiddlewareFunc* = proc(req: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.}
-type HandlerFunc* = proc(req: var Request):ref Response {.nimcall.}
+type MiddlewareFunc* = proc(req: var Request, resp: var Response): bool {.closure, gcsafe, locks: 0.}
+type HandlerFunc* = proc(req: var Request, res: var Response): void {.nimcall.}
 
 type RouterValue* = object
   handlerFunc: HandlerFunc
@@ -417,41 +414,36 @@ type RouterValue* = object
   middlewares:seq[MiddlewareFunc]
 
 type Router* = object
-  table: TableRef[string, RouterValue]
+  table: Table[string, RouterValue]
   notFoundHandler: HandlerFunc
 
 
 
-proc abortWith*(msg: string): ref Response =
-  result = newResponse()
-  result.code = Http404
-  result.content = msg
+proc abortWith*(res: var Response, msg: string) =
+  res.code = Http404
+  res.content = msg
 
 
-proc redirectTo*(url: string, code=Http301): ref Response =
-  result = newResponse()
-  result.code = code
-  result.headers.add("Location", url)
+proc redirectTo*(res: var Response, url: string, code=Http301) =
+  res.code = code
+  res.headers.add("Location", url)
 
 
 
-proc handle404*(req: var Request): ref Response  =
-  var resp = newResponse()
-  resp.code = Http404
-  resp.content = fmt"nothing at {req.path}"
-  return resp
+proc handle404*(req: var Request, res: var Response) =
+  res.code = Http404
+  res.content = fmt"nothing at {req.path}"
 
-proc newRouter*(notFoundHandler:HandlerFunc=handle404): ref Router =
-  result = new Router
-  result.table = newTable[string, RouterValue]()
+proc initRouter*(notFoundHandler:HandlerFunc=handle404): Router =
+  result.table =  initTable[string, RouterValue]()
   result.notFoundHandler = notFoundHandler
 
-iterator registeredRoutes*(r: ref Router): (string, string) =
+iterator registeredRoutes*(r: Router): (string, string) =
 
   for pat, routerValue in r.table:
     yield (pat, $routerValue.httpMethod)
 
-proc printRegisteredRoutes*(r: ref Router) =
+proc printRegisteredRoutes*(r: Router) =
 
   let t = newUnicodeTable()
   t.setHeaders(@[newCell("Method", pad=5), newCell("Route", rightpad=10)])
@@ -461,26 +453,26 @@ proc printRegisteredRoutes*(r: ref Router) =
 
   printTable(t)
 
-proc getByPath*(r: ref Router, path: string, httpMethod=HttpGet) : (RouterValue, TableRef[string, string]) =
+proc getByPath*(r: Router, path: string, httpMethod=HttpGet) : (RouterValue, Table[string, string]) =
   var found = false
-  if path in r.table: # exact match
-    return (r.table[path], newTable[string, string]())
+  if path in r.table and r.table[path].httpMethod == httpMethod:
+    return (r.table[path],  initTable[string, string]())
 
   for handlerPath, routerValue in r.table.pairs:
     if routerValue.httpMethod != httpMethod:
       continue
 
-    # echo fmt"checking handler:  {handlerPath} if it matches {path}"
+    echo fmt"checking handler: {handlerPath} if it matches {path}"
     let pathParts = path.split({'/'})
     let handlerPathParts = handlerPath.split({'/'})
-    # echo fmt"pathParts {pathParts} and handlerPathParts {handlerPathParts}"
+    echo fmt"pathParts {pathParts} and handlerPathParts {handlerPathParts}"
 
     if len(pathParts) != len(handlerPathParts):
       # echo "length isn't ok"
       continue
     else:
       var idx = 0
-      var capturedParams = newTable[string, string]()
+      var capturedParams =  initTable[string, string]()
 
       while idx<len(pathParts):
         let pathPart = pathParts[idx]
@@ -503,10 +495,10 @@ proc getByPath*(r: ref Router, path: string, httpMethod=HttpGet) : (RouterValue,
 
   if not found:
 
-    return (RouterValue(handlerFunc:r.notFoundHandler, middlewares: @[]), newTable[string, string]())
+    return (RouterValue(handlerFunc:r.notFoundHandler, middlewares: @[]),  initTable[string, string]())
 
 
-proc addRoute*(router: ref Router, route: string, handler: HandlerFunc, httpMethod:HttpMethod=HttpGet, middlewares:seq[MiddlewareFunc]= @[]) =
+proc addRoute*(router: var Router, route: string, handler: HandlerFunc, httpMethod:HttpMethod=HttpGet, middlewares:seq[MiddlewareFunc]= @[]) =
   router.table.add(route, RouterValue(handlerFunc:handler, httpMethod: httpMethod, middlewares:middlewares))
 
 let addHandler = addRoute
@@ -517,16 +509,16 @@ type ServerOptions* = object
 
 type Servy = object
   options: ServerOptions
-  router: ref Router
+  router: Router
   middlewares: seq[MiddlewareFunc]
   staticDir: string
   sock: AsyncSocket
 
 
 
-proc parseQueryParams(content: string): TableRef[string, string] =
+proc parseQueryParams(content: string): Table[string, string] =
   ## BUG IN JESTER.
-  result = newTable[string, string]()
+  result =  initTable[string, string]()
   var consumed = 0
   if "?" notin content and "=" notin content:
     return
@@ -549,7 +541,7 @@ proc parseQueryParams(content: string): TableRef[string, string] =
     result.add(decodeUrl(key), decodeUrl(val))
 
 
-proc parseFormData(r: Request): ref FormMultiPart =
+proc parseFormData(r: var Request): FormMultiPart =
 
 
   discard """
@@ -558,7 +550,7 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
 
   """
 
-  result = newFormMultiPart()
+  result = initFormMultiPart()
 
   let contenttype = r.headers.getOrDefault("content-type")[0]
   let body = r.body
@@ -580,10 +572,7 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
 
     for partString in formBody.split(partStart & "\c\L"):
 
-      echo "start partstring: "
-      echo partString
-      echo "end partstring:"
-      var part = newFormPart()
+      var part = initFormPart()
       var partName = ""
 
       var totalParsedLines = 1
@@ -626,15 +615,13 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
         inc totalParsedLines
 
       let content = join(bodyLines[totalParsedLines..^1], "\c\L")
-      echo ">>>>>>CNT"
-      echo content
-      echo "<<<<<<ENDCNT"
+
 
       part.body = content
       result.parts.add(partName, part)
       # echo $result.parts
 
-proc parseRequestFromConnection(s: ref Servy, conn:AsyncSocket): Future[Request] {.async.} =
+proc parseRequestFromConnection(s: Servy, conn:AsyncSocket): Future[Request] {.async.} =
     let requestline = $await conn.recvLine(maxLength=maxLine)
     var  meth, path, httpver: string
     var parts = requestLine.splitWhitespace()
@@ -656,10 +643,10 @@ proc parseRequestFromConnection(s: ref Servy, conn:AsyncSocket): Future[Request]
 
     result.path = path
     result.headers = newHttpHeaders()
-
-    result.queryParams = newTable[string, string]()
-    result.cookies = newTable[string, string]()
-    result.formData = newFormMultiPart()
+    result.queryParams =  initTable[string, string]()
+    result.cookies =  initTable[string, string]()
+    result.urlParams =  initTable[string, string]()
+    result.formData = initFormMultiPart()
 
     if "?" in path:
       # has query params
@@ -696,7 +683,6 @@ proc parseRequestFromConnection(s: ref Servy, conn:AsyncSocket): Future[Request]
       # FIXME: remember to add raw_body later
       # echo "ok body is : " & result.body
 
-    result.urlParams = newTable[string, string]()
     result.formData = result.parseFormData()
 
 proc `$`(ver:HttpVersion): string =
@@ -730,12 +716,11 @@ proc formatResponse(code:HttpCode, httpver:HttpVersion, content:string, headers:
   echo result
 
 
-proc format*(resp: ref Response) : string =
+proc format*(resp: Response) : string =
   result = formatResponse(resp.code, resp.httpver, resp.content, resp.headers)
 
 
-proc newServy*(options: ServerOptions, router:ref Router, middlewares:seq[MiddlewareFunc]): ref Servy =
-  result = new Servy
+proc initServy*(options: ServerOptions, router: Router, middlewares:seq[MiddlewareFunc]): Servy =
   result.options = options
   result.router = router
   result.middlewares = middlewares
@@ -744,21 +729,21 @@ proc newServy*(options: ServerOptions, router:ref Router, middlewares:seq[Middle
   result.sock.setSockOpt(OptReuseAddr, true)
 
 
-
-proc handleClient*(s: ref Servy, client: AsyncSocket) {.async.} =
+proc handleClient*(s: Servy, client: AsyncSocket) {.async.} =
   var req = await s.parseRequestFromConnection(client)
-
-
+  var res = initResponse()
+  res.headers = newHttpHeaders()
+  
   for  m in s.middlewares:
-    let (resp, usenextmiddleware) = m(req)
+    let usenextmiddleware = m(req, res)
     if not usenextmiddleware:
       echo "early return from middleware..."
-      await client.send(resp.format())
+      await client.send(res.format())
       return
 
   echo "received request from client: " & $req
 
-  let (routeHandler, params) = s.router.getByPath(req.path)
+  let (routeHandler, params) = s.router.getByPath(req.path, req.httpMethod)
   req.urlParams = params
   let handler = routeHandler.handlerFunc
   let middlewares = routeHandler.middlewares
@@ -766,18 +751,18 @@ proc handleClient*(s: ref Servy, client: AsyncSocket) {.async.} =
 
 
   for  m in middlewares:
-    let (resp, usenextmiddleware) = m(req)
+    let usenextmiddleware = m(req, res)
     if not usenextmiddleware:
       echo "early return from route middleware..."
-      await client.send(resp.format())
+      await client.send(res.format())
       return
 
-  let resp = handler(req)
+  handler(req,res)
   echo "reached the handler safely.. and executing now."
-  await client.send(resp.format())
+  await client.send(res.format())
   # echo $req.formData
 
-proc serve*(s: ref Servy) {.async.} =
+proc serve*(s: Servy) {.async.} =
   s.sock.bindAddr(s.options.port)
   s.sock.listen()
   s.router.printRegisteredRoutes
@@ -797,7 +782,7 @@ proc ip*(req: Request): string =
   if headers.hasKey("x-forwarded-for"):
     result = headers["x-forwarded-for"][0] 
 
-proc params*(req: Request): TableRef[string, string] =
+proc params*(req: Request): Table[string, string] =
   ## Parameters from the pattern and the query string.
   result = req.urlParams
 
@@ -832,27 +817,26 @@ proc stripLeadingSlashes(s: string): string =
       break  
   s[idx..^1]
 
-proc newStaticMiddleware(dir: string, onRoute="/public"): proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
-  result = proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
+proc newStaticMiddleware(dir: string, onRoute="/public"): proc(request: var Request, response: var Response): bool {.closure, gcsafe, locks: 0.} =
+  result = proc(request: var Request, response: var Response): bool {.closure, gcsafe, locks: 0.} =
     var thepath = request.path
-    var resp = newResponse()
     if thepath.startsWith(onRoute):
       thepath = thepath[onRoute.len..^1]  # strip the onRoute part
       thepath = thepath.stripLeadingSlashes()
       if fileExists(dir / thepath) == true:
-        resp.code = Http200
+        response.code = Http200
         let m = newMimetypes()
 
         let (parentName, dirName, ext) = splitFile(thepath)
-        resp.headers["Content-Type"] = m.getMimetype(ext)
-        resp.content = readFile(dir / thepath)
-        return (resp, false)
+        response.headers["Content-Type"] = m.getMimetype(ext)
+        response.content = readFile(dir / thepath)
+        return false
       else:
-        resp = abortWith("File not found.")
+        response.abortWith("File not found.")
     
-      return (resp, false)
+      return false
     else:
-        return (newResponse(), true)
+        return true
 
 when isMainModule:
 
@@ -878,14 +862,13 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
   # echo $parseRequestString(sampleRequest)
   # echo("Hello, World!")
   proc main() =
-    var router = newRouter()
-    proc handleHello(req:var Request): ref Response =
-      result = newResponse()
-      result.code = Http200
-      result.content = "hello world from handler /hello" & $req
+    var router = initRouter()
+    proc handleHello(req:var Request, res: var Response) =
+      res.code = Http200
+      res.content = "hello world from handler /hello" & $req
 
 
-    let loggingMiddleware = proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
+    let loggingMiddleware = proc(request: var Request,  response: var Response): bool {.closure, gcsafe, locks: 0.} =
       let path = request.path
       let headers = request.headers
       echo "==============================="
@@ -893,9 +876,9 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
       echo "path: " & path
       # echo "headers: " & $headers
       echo "==============================="
-      return (newResponse(), true)
+      return true
 
-    let trimTrailingSlash = proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
+    let trimTrailingSlash = proc(request: var Request,  response: var Response): bool {.closure, gcsafe, locks: 0.} =
       let path = request.path
       if path.endswith("/"):
         request.path = path[0..^2]
@@ -905,12 +888,12 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
       echo "path was : " & path
       echo "path: " & request.path
       echo "==============================="
-      return (newResponse(), true)
+      return true
 
 
     router.addRoute("/hello", handleHello)
 
-    let assertJwtFieldExists =  proc(request: var Request): (ref Response, bool) {.closure, gcsafe, locks: 0.} =
+    let assertJwtFieldExists =  proc(request: var Request, response: var Response): bool {.closure, gcsafe, locks: 0.} =
         # echo $request.headers
         let jwtHeaderVals = request.headers.getOrDefault("jwt", @[""])
         let jwt = jwtHeaderVals[0]
@@ -920,14 +903,13 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
         else:
           echo fmt"sure bye but i didn't get ur name"
         echo "===================\n\n"
-        return (newResponse(), true)
+        return true
 
     router.addRoute("/bye", handleHello, HttpGet, @[assertJwtFieldExists])
 
-    proc handleGreet(req:var Request): ref Response =
-      result = newResponse()
-      result.code = Http200
-      result.content = "generic greet" & $req
+    proc handleGreet(req:var Request, res: var Response) =
+      res.code = Http200
+      res.content = "generic greet" & $req
 
 
     router.addRoute("/greet", handleGreet, HttpGet, @[])
@@ -937,19 +919,19 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
 
 
 
-    proc handleHandlePost(req:var Request): ref Response =
-      result = newResponse()
-      result.code = Http200
-      result.content = $req
+    proc handleHandlePost(req:var Request, res: var Response) =
+      res.code = Http200
+      res.content = $req
 
 
     router.addRoute("/post", handleHandlePost, HttpPost, @[])
 
-    proc handleAbort(req:var Request): ref Response =
-      result = abortWith("sorry mate")
+    proc handleAbort(req:var Request, res: var Response) =
+      res.abortWith("sorry mate")
 
-    proc handleRedirect(req:var Request): ref Response =
-      result = redirectTo("https://python.org")
+    proc handleRedirect(req:var Request, res: var Response)=
+      res.redirectTo("https://python.org")
+
 
     router.addRoute("/redirect", handleRedirect, HttpGet)
     router.addRoute("/abort", handleAbort, HttpGet)
@@ -960,7 +942,7 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
 
 
     let opts = ServerOptions(address:"127.0.0.1", port:9000.Port)
-    var s = newServy(opts, router, @[loggingMiddleware, trimTrailingSlash, serveTmpDir, serveHomeDir])
+    var s = initServy(opts, router, @[loggingMiddleware, trimTrailingSlash, serveTmpDir, serveHomeDir])
     asyncCheck s.serve()
     echo "servy started..."
     runForever()
