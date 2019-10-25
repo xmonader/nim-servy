@@ -822,7 +822,7 @@ proc stripLeadingSlashes(s: string): string =
       break  
   s[idx..^1]
 
-proc newStaticMiddleware(dir: string, onRoute="/public"): proc(request: var Request, response: var Response): bool {.closure, gcsafe, locks: 0.} =
+proc newStaticMiddleware*(dir: string, onRoute="/public"): proc(request: var Request, response: var Response): bool {.closure, gcsafe, locks: 0.} =
   result = proc(request: var Request, response: var Response): bool {.closure, gcsafe, locks: 0.} =
     var thepath = request.path
     if thepath.startsWith(onRoute):
@@ -895,6 +895,17 @@ when isMainModule:
     proc handleGreet(req:var Request, res: var Response) =
       res.code = Http200
       res.content = "generic greet" & $req
+      if "username" in req.urlParams:
+        echo "username is: " & req.urlParams["username"]
+      
+      if "first" in req.urlParams:
+        echo "first is: " & req.urlParams["first"]
+
+      if "second" in req.urlParams:
+        echo "second is: " & req.urlParams["second"]
+
+      if "lang" in req.urlParams:
+        echo "lang is: " & req.urlParams["lang"]
 
 
     router.addRoute("/greet", handleGreet, HttpGet, @[])
@@ -902,14 +913,12 @@ when isMainModule:
     router.addRoute("/greet/:first/:second/:lang", handleGreet, HttpGet, @[])
 
 
-
-
-    proc handleHandlePost(req:var Request, res: var Response) =
+    proc handlePost(req:var Request, res: var Response) =
       res.code = Http200
       res.content = $req
 
 
-    router.addRoute("/post", handleHandlePost, HttpPost, @[])
+    router.addRoute("/post", handlePost, HttpPost, @[])
 
     proc handleAbort(req:var Request, res: var Response) =
       res.abortWith("sorry mate")
