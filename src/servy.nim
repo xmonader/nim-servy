@@ -355,6 +355,27 @@ proc initFormMultiPart(): FormMultiPart =
 proc `$`(this: FormMultiPart): string =
   return fmt"parts: {this.parts}"
 
+proc hasKey(this: FormMultiPart, key: string): bool =
+    result = this.parts.hasKey(key)
+
+proc getPart*(this: FormMultiPart, name: string): Option[FormPart] = 
+    if this.hasKey(name):
+        return some(this.parts[name])
+    return none(FormPart)
+
+proc getValueOrNone*(this: FormMultiPart, name: string): Option[string] =
+    echo fmt"checking for key ${name} in ${this}"
+    if this.hasKey(name):
+        echo fmt"key ${name} exists in ${this}"
+        return some(this.parts[name].body.strip)
+        
+    return none(string)
+
+proc getValue*(this: FormMultiPart, name: string):string =
+    if this.hasKey(name):
+        return this.parts[name].body.strip
+    else:
+        raise newException(KeyError, fmt"${name} not found.")
 
 type Request* = ref object
   httpMethod*: HTTPMethod
@@ -761,6 +782,7 @@ proc handleClient*(s: Servy, client: AsyncSocket) {.async.} =
 
   for  m in middlewares:
     let usenextmiddleware = await m(req, res)
+    echo "use next middle " & $usenextmiddleware
     if not usenextmiddleware:
       logMsg "early return from route middleware..."
       await client.send(res.format())
@@ -772,7 +794,7 @@ proc handleClient*(s: Servy, client: AsyncSocket) {.async.} =
   
   logMsg "reached the handler safely.. and executing now."
   await client.send(res.format())
-  # echo $req.formData
+#   echo $req.formData
 
 proc serve*(s: Servy) {.async.} =
   s.sock.bindAddr(s.options.port)
@@ -971,7 +993,7 @@ when isMainModule:
 
     router.addRoute("/hello", handleHello)
 
-    proc assertJwtFieldExists(req: Request, res: Response): Future[bool] {.async.} =
+    let assertJWTFieldExists = proc(req: Request, res: Response): Future[bool] {.async, closure, gcsafe.} =
         # echo $request.headers
         let jwtHeaderVals = req.headers.getOrDefault("jwt", @[""])
         let jwt = jwtHeaderVals[0]
@@ -983,7 +1005,7 @@ when isMainModule:
         echo "===================\n\n"
         return true
 
-    # router.addRoute("/bye", handleHello, HttpGet, @[assertJwtFieldExists])
+    router.addRoute("/bye", handleHello, HttpGet, @[assertJwtFieldExists])
 
     proc handleGreet(req: Request, res: Response) : Future[void] {.async.} =
       res.code = Http200
@@ -1007,6 +1029,8 @@ when isMainModule:
 
 
     proc handlePost(req: Request, res: Response) : Future[void] {.async.} =
+      #   req.fullInfo
+      echo "USERNAME: " & $(req.formData.getValueOrNone("username"))
       res.code = Http200
       res.content = $req
 
