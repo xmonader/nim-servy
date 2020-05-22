@@ -407,8 +407,8 @@ proc newResponse*(): Response =
   result.httpver = HttpVer11
   result.headers = newHttpHeaders()
 
-type MiddlewareFunc* = proc(req: Request, res: Response): Future[bool]
-type HandlerFunc* = proc(req: Request, res: Response) :  Future[void]  
+type MiddlewareFunc* = proc(req: Request, res: Response): Future[bool]  {.closure, gcsafe.}
+type HandlerFunc* = proc(req: Request, res: Response) :  Future[void]   {.closure, gcsafe.}
 
 
 type RouterValue* = object
@@ -832,8 +832,8 @@ proc stripLeadingSlashes(s: string): string =
       break  
   s[idx..^1]
 
-proc newStaticMiddleware*(dir: string, onRoute="/public"): proc(request: Request, response: Response): Future[bool] {.async, closure.} =
-  result = proc(request: Request, response: Response): Future[bool] {.async, closure.} =
+proc newStaticMiddleware*(dir: string, onRoute="/public"): proc(request: Request, response: Response): Future[bool] {.async, closure, gcsafe.} =
+  result = proc(request: Request, response: Response): Future[bool] {.async, closure, gcsafe.} =
     
     # TODO:
     # check for method to be get/head
@@ -884,10 +884,10 @@ proc trimTrailingSlash*(request: Request,  response: Response): Future[bool] {.a
 
 
 
-proc basicAuth*(users: Table[string, string], realm="private", text="Access denied"): proc(request: Request, response: Response): Future[bool] {.async, closure.} =
+proc basicAuth*(users: Table[string, string], realm="private", text="Access denied"): proc(request: Request, response: Response): Future[bool] {.async, closure, gcsafe.} =
 
 
-  result = proc(request: Request, response: Response): Future[bool] {.async, closure.} =
+  result = proc(request: Request, response: Response): Future[bool] {.async, closure, gcsafe.} =
 
     var processedUsers = initTable[string, string]()
     for u, p in users:
@@ -1042,7 +1042,6 @@ when isMainModule:
     router.addRoute("/ws", handleWS, HttpGet, @[])
 
     let opts = ServerOptions(address:"127.0.0.1", port:9000.Port, debug:true)
-    var s = initServy(opts, router, @[loggingMiddleware, trimTrailingSlash, serveTmpDir, serveHomeDir])
-    # var s = initServy(opts, router, @[loggingMiddleware, trimTrailingSlash])
-    s.run()
+    var s = initServy(opts, router, @[serveTmpDir, serveHomeDir, loggingMiddleware, trimTrailingSlash])
+    s.run() 
     
