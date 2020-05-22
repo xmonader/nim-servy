@@ -237,7 +237,7 @@ servy is integrated with [treeform/ws](https://github.com/treeform/ws) for webso
 ```
 and to test you can use nim client e.g
 
-```
+```nim
 import ws, asyncdispatch, asynchttpserver
 
 proc main(): Future[void]{.async.} =
@@ -282,7 +282,7 @@ curl localhost:9000/greet
 curl localhost:9000/greet/ahmed
 curl localhost:9000/greet/first/sec/en
 curl -XPOST localhost:9000/post
-curl -X POST -F 'username=davidwalsh' -F 'password=something' http://localhost:9000/post
+curl -X POST -F 'username=auser' -F 'password=apassword' http://localhost:9000/post
 curl -X POST -F 'myfile=@servy.nimble' http://localhost:9000/post
 curl -L localhost:9000/abort
 curl -L localhost:9000/redirect
