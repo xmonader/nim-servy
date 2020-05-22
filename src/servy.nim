@@ -626,6 +626,7 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
 
 proc parseRequestFromConnection(s: Servy, conn:AsyncSocket): Future[Request] {.async.} =
     result = Request.new
+    result.asyncSock = conn
     let requestline = $await conn.recvLine(maxLength=maxLine)
     var  meth, path, httpver: string
     var parts = requestLine.splitWhitespace()
@@ -764,8 +765,10 @@ proc handleClient*(s: Servy, client: AsyncSocket) {.async.} =
       logMsg "early return from route middleware..."
       await client.send(res.format())
       return
-
-  await handler(req, res)
+  try:
+    await handler(req, res)
+  except Exception:
+      echo getCurrentExceptionMsg() 
   
   logMsg "reached the handler safely.. and executing now."
   await client.send(res.format())
