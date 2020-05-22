@@ -406,7 +406,7 @@ proc initResponse*(): Response =
   result.httpver = HttpVer11
   result.headers = newHttpHeaders()
 
-type MiddlewareFunc* = proc(req: var Request, resp: var Response): Future[bool] {.closure, async, gcsafe, locks: 0.}
+type MiddlewareFunc* = proc(req: var Request, resp: var Response): Future[bool] {.async, gcsafe, locks: 0.}
 type HandlerFunc* = proc(req: var Request, res: var Response) :  Future[void] {.nimcall, async.}
 
 
@@ -830,8 +830,8 @@ proc stripLeadingSlashes(s: string): string =
       break  
   s[idx..^1]
 
-proc newStaticMiddleware*(dir: string, onRoute="/public"): proc(request: var Request, response: var Response): Future[bool] {.async, closure, gcsafe, locks: 0.} =
-  result = proc(request: var Request, response: var Response): Future[bool] {.async, closure, gcsafe, locks: 0.} =
+proc newStaticMiddleware*(dir: string, onRoute="/public"): proc(request: var Request, response: var Response): Future[bool] {.async, gcsafe, locks: 0.} =
+  result = proc(request: var Request, response: var Response): Future[bool] {.async, gcsafe, locks: 0.} =
     
     # TODO:
     # check for method to be get/head
@@ -858,7 +858,7 @@ proc newStaticMiddleware*(dir: string, onRoute="/public"): proc(request: var Req
         return true
 
 
-let loggingMiddleware* = proc(request: var Request,  response: var Response): Future[bool] {.async, closure, gcsafe, locks: 0.} =
+proc loggingMiddleware*(request: var Request,  response: var Response): Future[bool] {.async, gcsafe, locks: 0.} =
   let path = request.path
   let headers = request.headers
   echo "==============================="
@@ -868,7 +868,7 @@ let loggingMiddleware* = proc(request: var Request,  response: var Response): Fu
   echo "==============================="
   return true
 
-let trimTrailingSlash* = proc(request: var Request,  response: var Response): Future[bool] {.async, closure, gcsafe, locks: 0.} =
+proc trimTrailingSlash*(request: var Request,  response: var Response): Future[bool] {.async, gcsafe, locks: 0.} =
   let path = request.path
   if path.endswith("/"):
     request.path = path[0..^2]
@@ -882,10 +882,10 @@ let trimTrailingSlash* = proc(request: var Request,  response: var Response): Fu
 
 
 
-proc basicAuth*(users: Table[string, string], realm="private", text="Access denied"): proc(request: var Request, response: var Response): Future[bool] {.async, closure, gcsafe, locks: 0.} =
+proc basicAuth*(users: Table[string, string], realm="private", text="Access denied"): proc(request: var Request, response: var Response): Future[bool] {.async, gcsafe, locks: 0.} =
 
 
-  result = proc(request: var Request, response: var Response): Future[bool] {.async, closure, gcsafe, locks: 0.} =
+  result = proc(request: var Request, response: var Response): Future[bool] {.async, gcsafe, locks: 0.} =
 
     var processedUsers = initTable[string, string]()
     for u, p in users:
@@ -959,7 +959,6 @@ proc newServyWebSocket*(req: Request): Future[WebSocket] {.async.} =
 
 when isMainModule:
 
-  proc main() =
     var router = initRouter()
     proc handleHello(req: var Request, res: var Response) : Future[void] {.async.} =
       res.code = Http200
@@ -967,7 +966,7 @@ when isMainModule:
 
     router.addRoute("/hello", handleHello)
 
-    let assertJwtFieldExists =  proc(request: var Request, response: var Response): Future[bool] {.async, closure, gcsafe, locks: 0.} =
+    proc assertJwtFieldExists(request: var Request, response: var Response): Future[bool] {.async, gcsafe, locks: 0.} =
         # echo $request.headers
         let jwtHeaderVals = request.headers.getOrDefault("jwt", @[""])
         let jwt = jwtHeaderVals[0]
@@ -979,7 +978,7 @@ when isMainModule:
         echo "===================\n\n"
         return true
 
-    router.addRoute("/bye", handleHello, HttpGet, @[assertJwtFieldExists])
+    # router.addRoute("/bye", handleHello, HttpGet, @[assertJwtFieldExists])
 
     proc handleGreet(req: var Request, res: var Response) : Future[void] {.async.} =
       res.code = Http200
@@ -1012,7 +1011,7 @@ when isMainModule:
     proc handleAbort(req: var Request, res: var Response) : Future[void] {.async.} =
       res.abortWith("sorry mate")
 
-    proc handleRedirect(req:var Request, res: var Response)=
+    proc handleRedirect(req:var Request, res: var Response): Future[void] {.async.} =
       res.redirectTo("https://python.org")
 
 
@@ -1044,4 +1043,3 @@ when isMainModule:
     var s = initServy(opts, router, @[loggingMiddleware, trimTrailingSlash, serveTmpDir, serveHomeDir])
     s.run()
     
-  main()
