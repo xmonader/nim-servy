@@ -13,4 +13,4 @@ bin           = @["servy"]
 
 requires "nim >= 1.0.0"
 requires "terminaltables"
-
+requires "ws"

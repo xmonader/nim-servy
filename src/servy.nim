@@ -6,7 +6,8 @@ from cgi import decodeUrl
 import terminaltables
 import mimetypes
 import base64
-
+import ws
+import std/sha1
 
 type
   HttpVersion* = enum
@@ -367,7 +368,7 @@ type Request* = object
   formData*: FormMultiPart
   urlParams*: Table[string, string]
   cookies*: Table[string, string]
-
+  asyncSock: AsyncSocket
 
 proc `$`*(r: Request): string =
   result.add "*******RequestInfo*******"
@@ -405,8 +406,9 @@ proc initResponse*(): Response =
   result.httpver = HttpVer11
   result.headers = newHttpHeaders()
 
-type MiddlewareFunc* = proc(req: var Request, resp: var Response): bool {.closure, gcsafe, locks: 0.}
-type HandlerFunc* = proc(req: var Request, res: var Response): void {.nimcall.}
+type MiddlewareFunc* = proc(req: var Request, resp: var Response): Future[bool] {.closure, async, gcsafe, locks: 0.}
+type HandlerFunc* = proc(req: var Request, res: var Response) :  Future[void] {.nimcall, async.}
+
 
 type RouterValue* = object
   handlerFunc: HandlerFunc
@@ -430,7 +432,7 @@ proc redirectTo*(res: var Response, url: string, code=Http301) =
 
 
 
-proc handle404*(req: var Request, res: var Response) =
+proc handle404*(req: var Request, res: var Response) : Future[void] {.async.} =
   res.code = Http404
   res.content = fmt"nothing at {req.path}"
 
@@ -739,7 +741,7 @@ proc handleClient*(s: Servy, client: AsyncSocket) {.async.} =
   res.headers = newHttpHeaders()
   
   for  m in s.middlewares:
-    let usenextmiddleware = m(req, res)
+    let usenextmiddleware = await m(req, res)
     if not usenextmiddleware:
       logMsg "early return from middleware..."
       await client.send(res.format())
@@ -755,13 +757,13 @@ proc handleClient*(s: Servy, client: AsyncSocket) {.async.} =
 
 
   for  m in middlewares:
-    let usenextmiddleware = m(req, res)
+    let usenextmiddleware = await m(req, res)
     if not usenextmiddleware:
       logMsg "early return from route middleware..."
       await client.send(res.format())
       return
 
-  handler(req,res)
+  await handler(req,res)
   
   logMsg "reached the handler safely.. and executing now."
   await client.send(res.format())
@@ -828,8 +830,8 @@ proc stripLeadingSlashes(s: string): string =
       break  
   s[idx..^1]
 
-proc newStaticMiddleware*(dir: string, onRoute="/public"): proc(request: var Request, response: var Response): bool {.closure, gcsafe, locks: 0.} =
-  result = proc(request: var Request, response: var Response): bool {.closure, gcsafe, locks: 0.} =
+proc newStaticMiddleware*(dir: string, onRoute="/public"): proc(request: var Request, response: var Response): Future[bool] {.async, closure, gcsafe, locks: 0.} =
+  result = proc(request: var Request, response: var Response): Future[bool] {.async, closure, gcsafe, locks: 0.} =
     
     # TODO:
     # check for method to be get/head
@@ -856,7 +858,7 @@ proc newStaticMiddleware*(dir: string, onRoute="/public"): proc(request: var Req
         return true
 
 
-let loggingMiddleware* = proc(request: var Request,  response: var Response): bool {.closure, gcsafe, locks: 0.} =
+let loggingMiddleware* = proc(request: var Request,  response: var Response): Future[bool] {.async, closure, gcsafe, locks: 0.} =
   let path = request.path
   let headers = request.headers
   echo "==============================="
@@ -866,7 +868,7 @@ let loggingMiddleware* = proc(request: var Request,  response: var Response): bo
   echo "==============================="
   return true
 
-let trimTrailingSlash* = proc(request: var Request,  response: var Response): bool {.closure, gcsafe, locks: 0.} =
+let trimTrailingSlash* = proc(request: var Request,  response: var Response): Future[bool] {.async, closure, gcsafe, locks: 0.} =
   let path = request.path
   if path.endswith("/"):
     request.path = path[0..^2]
@@ -880,10 +882,10 @@ let trimTrailingSlash* = proc(request: var Request,  response: var Response): bo
 
 
 
-proc basicAuth*(users: Table[string, string], realm="private", text="Access denied"): proc(request: var Request, response: var Response): bool {.closure, gcsafe, locks: 0.} =
+proc basicAuth*(users: Table[string, string], realm="private", text="Access denied"): proc(request: var Request, response: var Response): Future[bool] {.async, closure, gcsafe, locks: 0.} =
 
 
-  result = proc(request: var Request, response: var Response): bool {.closure, gcsafe, locks: 0.} =
+  result = proc(request: var Request, response: var Response): Future[bool] {.async, closure, gcsafe, locks: 0.} =
 
     var processedUsers = initTable[string, string]()
     for u, p in users:
@@ -904,18 +906,68 @@ proc basicAuth*(users: Table[string, string], realm="private", text="Access deni
 
 
 
-when isMainModule:
 
+proc handshake*(ws: WebSocket, headers: HttpHeaders) {.async.} =
+  ws.version = parseInt(headers["Sec-WebSocket-Version"][0])
+  ws.key = headers["Sec-WebSocket-Key"][0].strip()
+  if headers.hasKey("Sec-WebSocket-Protocol"):
+    ws.protocol = headers["Sec-WebSocket-Protocol"][0].strip()
+
+  let 
+    sh = secureHash(ws.key & "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+    acceptKey = base64.encode(decodeBase16($sh))
+
+  var response = "HTTP/1.1 101 Web Socket Protocol Handshake\c\L"
+  response.add("Sec-WebSocket-Accept: " & acceptKey & "\c\L")
+  response.add("Connection: Upgrade\c\L")
+  response.add("Upgrade: webSocket\c\L")
+
+  if ws.protocol != "":
+    response.add("Sec-WebSocket-Protocol: " & ws.protocol & "\c\L")
+  response.add "\c\L"
+
+  await ws.tcpSocket.send(response)
+  ws.readyState = Open
+
+proc newServyWebSocket*(req: Request): Future[WebSocket] {.async.} =
+  ## Creates a new socket from an httpbeast request.
+  try:
+      let headers = req.headers
+  
+      if not headers.hasKey("Sec-WebSocket-Version"):
+        discard req.asyncSock.send(formatResponse(Http404, HttpVer11, "Not Found", headers))
+        raise newException(WebSocketError, "Not a valid websocket handshake.")
+  
+      var ws = WebSocket()
+      ws.masked = false
+  
+      # Here is the magic:
+      # req.forget() # Remove from HttpBeast event loop.
+      let fd = req.asyncSock.getFd
+       #   asyncdispatch.register(req.asyncSock.AsyncFD)  # Add to async event loop.
+      
+      ws.tcpSocket = newAsyncSocket(fd.AsyncFD)
+      await ws.handshake(headers)
+      return ws
+  
+  except ValueError, KeyError:
+      # Wrap all exceptions in a WebSocketError so its easy to catch
+      raise newException(
+      WebSocketError, 
+      "Failed to create WebSocket from request: " & getCurrentExceptionMsg()
+      )
+
+when isMainModule:
 
   proc main() =
     var router = initRouter()
-    proc handleHello(req:var Request, res: var Response) =
+    proc handleHello(req: var Request, res: var Response) : Future[void] {.async.} =
       res.code = Http200
       res.content = "hello world from handler /hello" & $req
 
     router.addRoute("/hello", handleHello)
 
-    let assertJwtFieldExists =  proc(request: var Request, response: var Response): bool {.closure, gcsafe, locks: 0.} =
+    let assertJwtFieldExists =  proc(request: var Request, response: var Response): Future[bool] {.async, closure, gcsafe, locks: 0.} =
         # echo $request.headers
         let jwtHeaderVals = request.headers.getOrDefault("jwt", @[""])
         let jwt = jwtHeaderVals[0]
@@ -929,7 +981,7 @@ when isMainModule:
 
     router.addRoute("/bye", handleHello, HttpGet, @[assertJwtFieldExists])
 
-    proc handleGreet(req:var Request, res: var Response) =
+    proc handleGreet(req: var Request, res: var Response) : Future[void] {.async.} =
       res.code = Http200
       res.content = "generic greet" & $req
       if "username" in req.urlParams:
@@ -950,14 +1002,14 @@ when isMainModule:
     router.addRoute("/greet/:first/:second/:lang", handleGreet, HttpGet, @[])
 
 
-    proc handlePost(req:var Request, res: var Response) =
+    proc handlePost(req: var Request, res: var Response) : Future[void] {.async.} =
       res.code = Http200
       res.content = $req
 
 
     router.addRoute("/post", handlePost, HttpPost, @[])
 
-    proc handleAbort(req:var Request, res: var Response) =
+    proc handleAbort(req: var Request, res: var Response) : Future[void] {.async.} =
       res.abortWith("sorry mate")
 
     proc handleRedirect(req:var Request, res: var Response)=
@@ -971,12 +1023,22 @@ when isMainModule:
     let serveTmpDir = newStaticMiddleware("/tmp", "/tmppublic")
     let serveHomeDir = newStaticMiddleware(getHomeDir(), "/homepublic")
 
-    proc handleBasicAuth(req:var Request, res: var Response) =
+    proc handleBasicAuth(req: var Request, res: var Response) : Future[void] {.async.} =
       res.code = Http200
       res.content = "logged in!!"
 
     let users = {"ahmed":"password", "xmon":"xmon"}.toTable
     router.addRoute("/basicauth", handleBasicAuth, HttpGet, @[basicAuth(users)])
+
+
+    proc handleWS(req:var Request, res: var Response) : Future[void] {.async.} =
+      var ws = await newServyWebSocket(req)
+      await ws.send("Welcome to simple echo server")
+      while ws.readyState == Open:
+        let packet = await ws.receiveStrPacket()
+        await ws.send(packet)
+
+    router.addRoute("/ws", handleWS, HttpGet, @[])
 
     let opts = ServerOptions(address:"127.0.0.1", port:9000.Port, debug:true)
     var s = initServy(opts, router, @[loggingMiddleware, trimTrailingSlash, serveTmpDir, serveHomeDir])
