@@ -417,10 +417,10 @@ proc fullInfo*(r: Request) =
   echo "***************************"
 
 type Response* = ref object
-  headers: HttpHeaders
-  httpver: HttpVersion
-  code: HttpCode
-  content: string
+  headers*: HttpHeaders
+  httpver*: HttpVersion
+  code*: HttpCode
+  content*: string
 
 
 proc newResponse*(): Response =
@@ -433,13 +433,13 @@ type HandlerFunc* = proc(req: Request, res: Response) :  Future[void]   {.closur
 
 
 type RouterValue* = object
-  handlerFunc: HandlerFunc
-  httpMethod: HttpMethod
-  middlewares:seq[MiddlewareFunc]
+  handlerFunc*: HandlerFunc
+  httpMethod*: HttpMethod
+  middlewares*:seq[MiddlewareFunc]
 
 type Router* = object
-  table: Table[string, RouterValue]
-  notFoundHandler: HandlerFunc
+  table*: Table[string, RouterValue]
+  notFoundHandler*: HandlerFunc
 
 
 
@@ -527,20 +527,20 @@ proc addRoute*(router: var Router, route: string, handler: HandlerFunc, httpMeth
 
 
 type ServerOptions* = object
-  address: string
-  port: Port
-  debug: bool
+  address*: string
+  port*: Port
+  debug*: bool
 
 type Servy = object
-  options: ServerOptions
-  router: Router
-  middlewares: seq[MiddlewareFunc]
-  staticDir: string
-  sock: AsyncSocket
+  options*: ServerOptions
+  router*: Router
+  middlewares*: seq[MiddlewareFunc]
+  staticDir*: string
+  sock*: AsyncSocket
 
 
 
-proc parseQueryParams(content: string): Table[string, string] =
+proc parseQueryParams*(content: string): Table[string, string] =
   ## BUG IN JESTER.
   result =  initTable[string, string]()
   var consumed = 0
@@ -565,7 +565,7 @@ proc parseQueryParams(content: string): Table[string, string] =
     result.add(decodeUrl(key), decodeUrl(val))
 
 
-proc parseFormData(r: var Request): FormMultiPart =
+proc parseFormData*(r: var Request): FormMultiPart =
 
 
   discard """
@@ -645,7 +645,7 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
       result.parts.add(partName, part)
       # echo $result.parts
 
-proc parseRequestFromConnection(s: Servy, conn:AsyncSocket): Future[Request] {.async.} =
+proc parseRequestFromConnection*(s: Servy, conn:AsyncSocket): Future[Request] {.async.} =
     result = Request.new
     result.asyncSock = conn
     let requestline = $await conn.recvLine(maxLength=maxLine)
@@ -712,12 +712,12 @@ proc parseRequestFromConnection(s: Servy, conn:AsyncSocket): Future[Request] {.a
 
     result.formData = result.parseFormData()
 
-proc `$`(ver:HttpVersion): string =
+proc `$`*(ver:HttpVersion): string =
       case ver
       of HttpVer10: result="HTTP/1.0"
       of HttpVer11: result="HTTP/1.1"
 
-proc `$`(m:HttpMethod): string =
+proc `$`*(m:HttpMethod): string =
   case m
   of HttpHead: result="HEAD"
   of HttpGet: result= "GET"
@@ -729,10 +729,10 @@ proc `$`(m:HttpMethod): string =
   of HttpConnect: result="CONNECT"
   of HttpPatch: result="PATCH"
 
-proc formatStatusLine(code: HttpCode, httpver: HttpVersion) : string =
+proc formatStatusLine*(code: HttpCode, httpver: HttpVersion) : string =
   return fmt"{httpver} {code}" & "\r\n"
 
-proc formatResponse(code:HttpCode, httpver:HttpVersion, content:string, headers:HttpHeaders): string =
+proc formatResponse*(code:HttpCode, httpver:HttpVersion, content:string, headers:HttpHeaders): string =
   result &= formatStatusLine(code, httpver)
   if headers.len > 0:
     for k,v in headers.pairs:
@@ -755,7 +755,7 @@ proc initServy*(options: ServerOptions, router: Router, middlewares:seq[Middlewa
   result.sock = newAsyncSocket()
   result.sock.setSockOpt(OptReuseAddr, true)
 
-template logMsg(m: string) : untyped = 
+template logMsg*(m: string) : untyped = 
   if s.options.debug:
     echo m
   
@@ -848,7 +848,7 @@ proc host*(req: Request): string =
   req.headers.getOrDefault("HOST")[0]
 
 
-proc stripLeadingSlashes(s: string): string =
+proc stripLeadingSlashes*(s: string): string =
   var idx = 0
   while idx < s.len:
     if s[idx] == '/':
