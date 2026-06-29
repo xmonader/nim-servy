@@ -1,7 +1,7 @@
 # This is just an example to get you started. A typical binary package
 # uses this file as the main entry point of the application.
 
-import strformat, tables, json, strutils, asyncdispatch, asyncnet, strutils, parseutils, options, net, os
+import strformat, tables, json, strutils, asyncdispatch, asyncnet, parseutils, options, net, os
 from cgi import decodeUrl
 import terminaltables
 import mimetypes
@@ -184,9 +184,6 @@ proc `[]`*(headers: HttpHeaders, key: string): HttpHeaderValues =
   ## to get all of them access the ``table`` field directly.
   return headers.table[key.toLowerAscii].HttpHeaderValues
 
-# converter toString*(values: HttpHeaderValues): string =
-#   return seq[string](values)[0]
-
 proc `[]`*(headers: HttpHeaders, key: string, i: int): string =
   ## Returns the ``i``'th value associated with the given key. If there are
   ## no values associated with the key or the ``i``'th value doesn't exist,
@@ -364,11 +361,8 @@ proc getPart*(this: FormMultiPart, name: string): Option[FormPart] =
     return none(FormPart)
 
 proc getValueOrNone*(this: FormMultiPart, name: string): Option[string] =
-    echo fmt"checking for key ${name} in ${this}"
     if this.hasKey(name):
-        echo fmt"key ${name} exists in ${this}"
         return some(this.parts[name].body.strip)
-        
     return none(string)
 
 proc getValue*(this: FormMultiPart, name: string):string =
@@ -486,10 +480,8 @@ proc getByPath*(r: Router, path: string, httpMethod=HttpGet) : (RouterValue, Tab
     if routerValue.httpMethod != httpMethod:
       continue
 
-    echo fmt"checking handler: {handlerPath} if it matches {path}"
     let pathParts = path.split({'/'})
     let handlerPathParts = handlerPath.split({'/'})
-    echo fmt"pathParts {pathParts} and handlerPathParts {handlerPathParts}"
 
     if len(pathParts) != len(handlerPathParts):
       # echo "length isn't ok"
@@ -739,8 +731,6 @@ proc formatResponse*(code:HttpCode, httpver:HttpVersion, content:string, headers
       result &= fmt"{k}: {v}" & "\r\n"
   result &= fmt"Content-Length: {content.len}" & "\r\n\r\n"
   result &= content
-  echo "will send"
-  echo result
 
 
 proc format*(resp: Response) : string =
@@ -782,7 +772,6 @@ proc handleClient*(s: Servy, client: AsyncSocket) {.async.} =
 
   for  m in middlewares:
     let usenextmiddleware = await m(req, res)
-    echo "use next middle " & $usenextmiddleware
     if not usenextmiddleware:
       logMsg "early return from route middleware..."
       await client.send(res.format())
