@@ -1,7 +1,7 @@
 # This is just an example to get you started. A typical binary package
 # uses this file as the main entry point of the application.
 
-import strformat, tables, json, strutils, asyncdispatch, asyncnet, parseutils, options, net, os
+import strformat, tables, strutils, asyncdispatch, asyncnet, parseutils, options
 from cgi import decodeUrl
 import terminaltables
 import mimetypes
@@ -147,8 +147,6 @@ proc `$`*(code: HttpCode): string =
     of 511: "511 Network Authentication Required"
     of 599: "599 Network Connect Timeout Error"
     else: $(int(code))
-
-const headerLimit* = 10_000
 
 
 type HttpHeaders* = ref object
@@ -378,7 +376,6 @@ type Request* = ref object
   headers*: HTTPHeaders
   path*: string
   body*: string
-  raw_body: string
   queryParams*: Table[string, string]
   formData*: FormMultiPart
   urlParams*: Table[string, string]
@@ -527,7 +524,6 @@ type Servy = object
   options*: ServerOptions
   router*: Router
   middlewares*: seq[MiddlewareFunc]
-  staticDir*: string
   sock*: AsyncSocket
 
 
