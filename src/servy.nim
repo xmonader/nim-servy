@@ -370,10 +370,10 @@ proc getValue*(this: FormMultiPart, name: string):string =
         raise newException(KeyError, fmt"${name} not found.")
 
 type Request* = ref object
-  httpMethod*: HTTPMethod
+  httpMethod*: HttpMethod
   requestURI*: string
   httpVersion*: HttpVersion
-  headers*: HTTPHeaders
+  headers*: HttpHeaders
   path*: string
   body*: string
   queryParams*: Table[string, string]
