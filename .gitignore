@@ -6,7 +6,7 @@ nimblecache/
 *.app
 
 # Binary outputs
-servy
+/servy
 
 # Editor directories and files
 .idea/
