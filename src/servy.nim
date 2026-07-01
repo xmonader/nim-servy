@@ -383,29 +383,15 @@ type Request* = ref object
   asyncSock: AsyncSocket
 
 proc `$`*(r: Request): string =
-  result.add "*******RequestInfo*******"
-  result.add "Path: " & r.path
-  result.add "Method: " & $r.httpMethod
-  result.add "Headers: " & $r.headers
-  result.add "Cookies: " & $r.cookies
-  result.add "QueryParams: " & $r.queryParams
-  result.add "URLParams: " & $r.urlParams
-  result.add "FormData: " & $r.formData
+  result.add "*******RequestInfo*******\n"
+  result.add "Path: " & r.path & "\n"
+  result.add "Method: " & $r.httpMethod & "\n"
+  result.add "Headers: " & $r.headers & "\n"
+  result.add "Cookies: " & $r.cookies & "\n"
+  result.add "QueryParams: " & $r.queryParams & "\n"
+  result.add "URLParams: " & $r.urlParams & "\n"
+  result.add "FormData: " & $r.formData & "\n"
   result.add "***************************"
-  
-proc fullInfo*(r: Request) =
-  echo "*******RequestInfo*******"
-  echo "Path: " & r.path
-  echo "Method: " & $r.httpMethod
-  echo "HTTP VER: " & $r.httpVersion
-  echo "Headers: " & $r.headers
-  echo "Cookies: " & $r.cookies
-  echo "QueryParams: " & $r.queryParams
-  echo "URLParams: " & $r.urlParams
-  echo "FormData: " & $r.formData
-  echo "Body: "
-  echo r.body
-  echo "***************************"
 
 type Response* = ref object
   headers*: HttpHeaders
