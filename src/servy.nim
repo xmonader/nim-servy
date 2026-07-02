@@ -515,8 +515,7 @@ type Servy = object
 
 
 proc parseQueryParams*(content: string): Table[string, string] =
-  ## BUG IN JESTER.
-  result =  initTable[string, string]()
+  result = initTable[string, string]()
   var consumed = 0
   if "?" notin content and "=" notin content:
     return
@@ -540,14 +539,6 @@ proc parseQueryParams*(content: string): Table[string, string] =
 
 
 proc parseFormData*(r: var Request): FormMultiPart =
-
-
-  discard """
-received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion: HTTP/1.1, headers: {"accept": @["*/*"], "content-length": @["241"], "content-type": @["multipart/form-data; boundary=------------------------95909933ebe184f2"], "host": @["127.0.0.1:9000"], "user-agent": @["curl/7.62.0-DEV"]}, path: "/post", body: "--------------------------95909933ebe184f2\c\nContent-Disposition: form-data; name=\"who\"\c\n\c\nhamada\c\n--------------------------95909933ebe184f2\c\nContent-Disposition: form-data; name=\"next\"\c\n\c\nhome\c\n--------------------------95909933ebe184f2--\c\n", raw_body: "", queryParams: {:})
-
-
-  """
-
   result = initFormMultiPart()
 
   let contenttype = r.headers.getOrDefault("content-type")[0]
@@ -576,11 +567,6 @@ received request from client: (httpMethod: HttpPost, requestURI: "", httpVersion
       var totalParsedLines = 1
       let bodyLines = partString.splitLines()
       for line in bodyLines:
-        # if line.strip().len != 0:
-        #   let splitted = line.split(": ")
-        #   if len(splitted) == 2:
-        #     part.headers.add(splitted[0], splitted[1])
-        #   elif len(splitted) == 1:
         var kv: tuple[key: string, value: seq[string]]
         if line.contains(":") == true:
           if line.contains(";") == true:
@@ -658,15 +644,12 @@ proc parseRequestFromConnection*(s: Servy, conn:AsyncSocket): Future[Request] {.
     result.formData = initFormMultiPart()
 
     if "?" in path:
-      # has query params
-      # todo use decodeFields from cgi 
       result.queryParams = parseQueryParams(path)
 
 
     # parse headers
     var line = ""
     line = $(await conn.recvLine(maxLength=maxLine))
-    # echo fmt"line: >{line}< "
     while line != "\r\n":
       var kv: tuple[key: string, value: seq[string]]
       # a header line
@@ -689,14 +672,11 @@ proc parseRequestFromConnection*(s: Servy, conn:AsyncSocket): Future[Request] {.
             if cookiename.len > 0:
               result.cookies[cookiename] = cookieval
       line = $(await conn.recvLine(maxLength=maxLine))
-      # echo fmt"line: >{line}< "
 
 
 
     if contentLength > 0:
       result.body = await conn.recv(contentLength)
-      # FIXME: remember to add raw_body later
-      # echo "ok body is : " & result.body
 
     result.formData = result.parseFormData()
 
@@ -779,7 +759,6 @@ proc handleClient*(s: Servy, client: AsyncSocket) {.async.} =
   
   logMsg "reached the handler safely.. and executing now."
   await client.send(res.format())
-#   echo $req.formData
 
 proc serve*(s: Servy) {.async.} =
   s.sock.bindAddr(s.options.port)
@@ -953,11 +932,7 @@ proc newServyWebSocket*(req: Request): Future[WebSocket] {.async.} =
       var ws = WebSocket()
       ws.masked = false
   
-      # Here is the magic:
-      # req.forget() # Remove from HttpBeast event loop.
       let fd = req.asyncSock.getFd
-       #   asyncdispatch.register(req.asyncSock.AsyncFD)  # Add to async event loop.
-      
       ws.tcpSocket = newAsyncSocket(fd.AsyncFD)
       await ws.handshake(headers)
       return ws
@@ -979,7 +954,6 @@ when isMainModule:
     router.addRoute("/hello", handleHello)
 
     let assertJWTFieldExists = proc(req: Request, res: Response): Future[bool] {.async, closure, gcsafe.} =
-        # echo $request.headers
         let jwtHeaderVals = req.headers.getOrDefault("jwt", @[""])
         let jwt = jwtHeaderVals[0]
         echo "================\n\njwt middleware"
@@ -1014,7 +988,6 @@ when isMainModule:
 
 
     proc handlePost(req: Request, res: Response) : Future[void] {.async.} =
-      #   req.fullInfo
       echo "USERNAME: " & $(req.formData.getValueOrNone("username"))
       res.code = Http200
       res.content = $req
