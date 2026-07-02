@@ -779,7 +779,7 @@ proc handleClient*(s: Servy, client: AsyncSocket) {.async.} =
   try:
     await handler(req, res)
   except Exception:
-      echo getCurrentExceptionMsg() 
+      logMsg "handler error: " & getCurrentExceptionMsg()
   
   logMsg "reached the handler safely.. and executing now."
   await client.send(res.format())
