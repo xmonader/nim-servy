@@ -7,6 +7,8 @@ nimblecache/
 
 # Binary outputs
 /servy
+/examples/hello
+/examples/hello.exe
 
 # Editor directories and files
 .idea/
