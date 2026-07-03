@@ -1,290 +1,245 @@
 # servy
 
-Servy is a fast, simple and lightweight micro web-framework for Nim
-
+Servy is a fast, simple and lightweight micro web-framework for Nim, supporting Nim 2.x.
 
 ## Installation
 
-`nimble install servy`
+```
+nimble install servy
+```
 
-## quickstart
-
-### First create the router
+## Quickstart
 
 ```nim
 import servy
-var router = initRouter()
 
-```
+when isMainModule:
+  var router = initRouter()
 
-### Define your first handler function
-
-```nim
-proc handleHello(req: Request, res: Response) : Future[void] {.async.} =
+  proc handleHello(req: Request, res: Response): Future[void] {.async.} =
     res.code = Http200
-    res.content = "hello world from handler /hello" & $req
+    res.content = "hello world!"
 
+  router.addRoute("/hello", handleHello)
 
+  let opts = ServerOptions(address: "127.0.0.1", port: 9000.Port, debug: true)
+  var s = initServy(opts, router)
+  s.run()
 ```
 
-### Wire the handler to a path
+## Routing
+
+### Basic routes
 
 ```nim
-    router.addRoute("/hello", handleHello)
-
-```
-
-### Running Servy
-
-```nim
-let opts = ServerOptions(address:"127.0.0.1", port:9000.Port, debug:true)
-var s = initServy(opts, router)
-s.run()
-```
-
-### Making first request
-
-using curl or your web browser go to localhost:9000/hello
-
-```
-➜  servy git:(master) ✗ curl localhost:9000/hello
-hello world from handler /hello%    
-```
-
-
-
-## Defining handlers and wiring them
-
-```nim
-
-    proc handleGreet(req: Request, res: Response) : Future[void] {.async.} =
-      res.code = Http200
-      res.content = "generic greet" & $req
-      if "username" in req.urlParams:
-        echo "username is: " & req.urlParams["username"]
-      
-      if "first" in req.urlParams:
-        echo "first is: " & req.urlParams["first"]
-
-      if "second" in req.urlParams:
-        echo "second is: " & req.urlParams["second"]
-
-      if "lang" in req.urlParams:
-        echo "lang is: " & req.urlParams["lang"]
-
-
-    router.addRoute("/greet", handleGreet, HttpGet, @[])
-    router.addRoute("/greet/:username", handleGreet, HttpGet, @[])
-    router.addRoute("/greet/:first/:second/:lang", handleGreet, HttpGet, @[])
-
-
-
-```
-`addRoute` takes the following params
-- `pat` route pattern
-- `handlerFunc` to execute on match
-- `httpMethod` to only execute on a certain http method
-- `middlewares` list of middlewares to execute before request (for specific route) 
-the captured route variables are available in `req.urlParams` table
-  
-
-### Handling different HTTP methods
-
-```nim
-    proc handlePost(req: Request, res: Response) : Future[void] {.async.} =
-      #   req.fullInfo
-      echo "USERNAME: " & $(req.formData.getValueOrNone("username"))
-      res.code = Http200
-      res.content = $req
-
-
-
+router.addRoute("/", handleIndex)
+router.addRoute("/get", handleGet, HttpGet)
 router.addRoute("/post", handlePost, HttpPost)
-
+router.addRoute("/put", handlePut, HttpPut)
+router.addRoute("/delete", handleDelete, HttpDelete)
 ```
-Here we handle `POST` on path `/post` with handler `handlePost`
-- `formData` table is available on the request body handling both `multipart` and `x-www-form-urlencoded` post formats
-- `req.formData.getValueOrNone` gives you access to form data.
 
+### URL parameters
 
-### Abort
+Use `:param` to capture URL segments:
+
 ```nim
-proc handleAbort(req: Request, res: Response) : Future[void] {.async.} =
-      res.abortWith("sorry mate")
+proc handleUser(req: Request, res: Response): Future[void] {.async.} =
+  res.content = "user=" & req.urlParams["user"]
 
-router.addRoute("/abort", handleAbort, HttpGet)
-
+router.addRoute("/user/:user", handleUser)
+router.addRoute("/multi/:first/:second", handleMultiParam)
 ```
-response object has `abortWith` proc available 
 
+Captured parameters are available in `req.urlParams`.
+
+### Query parameters
+
+Query parameters are automatically parsed from the URL:
+
+```nim
+proc handleQuery(req: Request, res: Response): Future[void] {.async.} =
+  for k, v in req.queryParams.pairs:
+    res.content.add(k & "=" & v & " ")
+
+router.addRoute("/query", handleQuery)
+```
+
+Request: `GET /query?page=1&limit=10` gives `req.queryParams["page"]` = `"1"`.
+
+## Request data
+
+### Form data (URL-encoded and multipart)
+
+```nim
+proc handleForm(req: Request, res: Response): Future[void] {.async.} =
+  let username = req.formData.getValueOrNone("username")
+  let password = req.formData.getValueOrNone("password")
+  res.content = "user=" & username.get("") & " pass=" & password.get("")
+
+router.addRoute("/login", handleForm, HttpPost)
+```
+
+### Cookies
+
+```nim
+proc handleCookies(req: Request, res: Response): Future[void] {.async.} =
+  for k, v in req.cookies.pairs:
+    res.content.add(k & "=" & v & " ")
+
+router.addRoute("/cookies", handleCookies)
+```
+
+### Setting response cookies
+
+```nim
+proc handleSetCookie(req: Request, res: Response): Future[void] {.async.} =
+  res.headers["Set-Cookie"] = "session=abc123; Path=/"
+  res.content = "cookie set"
+```
+
+### Custom response headers
+
+```nim
+proc handleHeaders(req: Request, res: Response): Future[void] {.async.} =
+  res.headers["X-Custom"] = "test-value"
+  res.content = "headers set"
+```
+
+## Response helpers
+
+### Abort (return error with status code)
+
+```nim
+proc handleAbort(req: Request, res: Response): Future[void] {.async.} =
+  res.abortWith("forbidden", Http403)
+```
 
 ### Redirect
 
 ```nim
-
-proc handleRedirect(req: Request, res:  Response): Future[void] {.async.} =
-      res.redirectTo("https://python.org")
-
-router.addRoute("/redirect", handleRedirect, HttpGet)
-
+proc handleRedirect(req: Request, res: Response): Future[void] {.async.} =
+  res.redirectTo("/")
+  # or with custom code: res.redirectTo("/", Http302)
 ```
-response object has `redirectTo` proc available, also you can set status code as optional param.
 
+## Middleware
 
+Middleware procs return `Future[bool]`. Return `true` to continue, `false` to short-circuit.
 
-## Defining middlewares
-
-Here's an example of a logging middleware that runs before processing any handler
-
-### Logging Middleware
-```nim
-proc loggingMiddleware*(request: Request,  response: Response): Future[bool] {.async.} =
-  let path = request.path
-  let headers = request.headers
-  echo "==============================="
-  echo "from logger handler"
-  echo "path: " & path
-  echo "headers: " & $headers
-  echo "==============================="
-  return true
-```
-if you want to terminate the middleware chain return false
-
-
-### Trim slashes Middleware
+### Built-in middleware
 
 ```nim
-proc trimTrailingSlash*(request: Request,  response: Response): Future[bool] {.async.} =
-  let path = request.path
-  if path.endswith("/"):
-    request.path = path[0..^2]
+import servy/middleware
 
-  echo "==============================="
-  echo "from slash trimmer "
-  echo "path was : " & path
-  echo "path: " & request.path
-  echo "==============================="
+# Logging
+proc loggingMiddleware*(request: Request, response: Response): Future[bool] {.async.} =
+  echo request.httpMethod, " ", request.path
   return true
 
+# Trim trailing slashes
+proc trimTrailingSlash*(request: Request, response: Response): Future[bool] {.async.} =
+  if request.path.endsWith("/"):
+    request.path = request.path[0 .. ^2]
+  return true
 ```
 
-
-### Static files middleware
+### Static file serving
 
 ```nim
-let serveTmpDir = newStaticMiddleware("/tmp", "/tmppublic")
-let serveHomeDir = newStaticMiddleware(getHomeDir(), "/homepublic")
-```
-You can serve static assets from a certain directory using static middleware.
-
-`newStaticMiddleware` takes in a directory to serve and a path `onRoute` to serve on.
-
-### Basic Auth
-
-Here's how it's defined
-```nim
-
-proc basicAuth*(users: Table[string, string], realm="private", text="Access denied"): proc(request: Request, response: Response): Future[bool] {.async, closure, gcsafe.} =
-
-
-  result = proc(request: Request, response: Response): Future[bool] {.async, closure, gcsafe.} =
-
-    var processedUsers = initTable[string, string]()
-    for u, p in users:
-      let encodedAuth = encode(fmt"{u}:{p}")
-      processedUsers.add(fmt"Basic {encodedAuth}", u)
-
-    let authHeader = request.headers.getOrDefault("authorization", @[""])[0]
-
-    var found = authHeader in processedUsers
-      
-    if not found or authHeader.len == 0:
-      let realmstring = '"' & realm & '"'
-      response.headers.add("WWW-Authenticate", fmt"Basic realm={realmstring}") 
-      response.abortWith("Access denied", Http401)
-      return false
-    else:
-      return true
-
+let serveStatic = newStaticMiddleware("/path/to/files", "/public")
+# Serves files from /path/to/files at URL prefix /public
 ```
 
-#### Example of HTTP Basic Auth
+### Basic authentication
 
 ```nim
+import tables
 
-    proc handleBasicAuth(req: Request, res: Response) : Future[void] {.async.} =
-      res.code = Http200
-      res.content = "logged in!!"
+let users = {"admin": "secret", "user": "pass"}.toTable
+let authMiddleware = basicAuth(users)
 
-    let users = {"ahmed":"password", "xmon":"xmon"}.toTable
-    router.addRoute("/basicauth", handleBasicAuth, HttpGet, @[basicAuth(users)])
+proc handleProtected(req: Request, res: Response): Future[void] {.async.} =
+  res.content = "welcome!"
 
+router.addRoute("/admin", handleProtected, HttpGet, @[authMiddleware])
 ```
 
-## Websockets
-
-servy is integrated with [treeform/ws](https://github.com/treeform/ws) for websocket support, here is an example
+### Custom per-route middleware
 
 ```nim
-    proc handleWS(req: Request, res: Response) : Future[void] {.async.} =
-      var ws = await newServyWebSocket(req)
-      await ws.send("Welcome to simple echo server")
-      while ws.readyState == Open:
-        let packet = await ws.receiveStrPacket()
-        await ws.send(packet)
+proc myMiddleware(req: Request, res: Response): Future[bool] {.async, closure, gcsafe.} =
+  let token = req.headers.getOrDefault("authorization", @[""])[0]
+  if token == "Bearer secret":
+    return true
+  else:
+    res.abortWith("unauthorized", Http401)
+    return false
 
-    router.addRoute("/ws", handleWS, HttpGet, @[])
+router.addRoute("/protected", handleGet, HttpGet, @[myMiddleware])
 ```
-and to test you can use nim client e.g
+
+**Important for Nim 2.x:** Local middleware procs must use `{.async, closure, gcsafe.}` pragms.
+
+### Global middleware (applied to all routes)
 
 ```nim
-import ws, asyncdispatch, asynchttpserver
-
-proc main(): Future[void]{.async.} =
-    var w = await newWebSocket("ws://127.0.0.1:9000/ws")
-    echo await w.receiveStrPacket()
-    await w.send("Hi, how are you?")
-    echo await w.receiveStrPacket()
-    w.close()
-
-waitFor main()
+var s = initServy(opts, router, @[loggingMiddleware, trimTrailingSlash, serveStatic])
 ```
 
-or from javascript 
+## WebSocket support
 
+Servy integrates with [treeform/ws](https://github.com/treeform/ws):
+
+```nim
+proc handleWS(req: Request, res: Response): Future[void] {.async.} =
+  var ws = await newServyWebSocket(req)
+  await ws.send("Welcome!")
+  while ws.readyState == Open:
+    let packet = await ws.receiveStrPacket()
+    await ws.send("echo: " & packet)
+
+router.addRoute("/ws", handleWS, HttpGet)
+```
+
+Test with JavaScript:
 ```javascript
-> ws = new WebSocket("ws://127.0.0.1:9000/ws")
-> ws.onmessage = (m)=>console.log(m.data)
-(m)=>console.log(m.data)
-> ws.send("bye")
-bye
+ws = new WebSocket("ws://127.0.0.1:9000/ws")
+ws.onmessage = (m) => console.log(m.data)
+ws.send("hello")
 ```
 
+## Module structure
+
+```
+servy/
+  types.nim      # Core types (Request, Response, HandlerFunc, MiddlewareFunc)
+  router.nim     # Route matching and registration
+  parser.nim     # HTTP request parsing
+  response.nim   # Response formatting
+  middleware.nim  # Built-in middleware (logging, static, auth)
+  websocket.nim  # WebSocket integration
+  server.nim     # Server startup and request handling
+  servy.nim      # Facade that re-exports all modules
+```
 
 ## Running
 
-```nim
-let opts = ServerOptions(address:"127.0.0.1", port:9000.Port)
-var s = initServy(opts, router, @[loggingMiddleware, trimTrailingSlash, serveTmpDir, serveHomeDir])
-s.run()
+```bash
+nim c -r examples/hello.nim
+# or
+nimble run servy
 ```
 
-`initServy` takes in some options for binding address and the router to use for incoming requests in a list of middlewares to execute before handlers.
+Then visit `http://localhost:9000/hello`.
 
+## Curl examples
 
-## curl examples
-
-Here are some curl examples to play with servy if you start it with `nimble run servy`
-
-```nim
+```bash
 curl localhost:9000/hello
-curl localhost:9000/greet
-curl localhost:9000/greet/ahmed
-curl localhost:9000/greet/first/sec/en
-curl -XPOST localhost:9000/post
-curl -X POST -F 'username=auser' -F 'password=apassword' http://localhost:9000/post
-curl -X POST -F 'myfile=@servy.nimble' http://localhost:9000/post
-curl -L localhost:9000/abort
-curl -L localhost:9000/redirect
-
+curl localhost:9000/user/alice
+curl localhost:9000/multi/foo/bar
+curl -X POST -d "username=john&password=doe" localhost:9000/login
+curl -b "session=xyz" localhost:9000/cookies
+curl -H "Authorization: Basic YWRtaW46c2VjcmV0" localhost:9000/admin
 ```

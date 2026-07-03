@@ -293,8 +293,9 @@ proc newResponse*(): Response =
   result.httpver = HttpVer11
   result.headers = newHttpHeaders()
 
-type MiddlewareFunc* = proc(req: Request, res: Response): Future[bool] {.nimcall.}
-type HandlerFunc* = proc(req: Request, res: Response): Future[void] {.nimcall.}
+type
+  MiddlewareFunc* = proc(req: Request, res: Response): Future[bool] {.closure, gcsafe.}
+  HandlerFunc* = proc(req: Request, res: Response): Future[void] {.closure, gcsafe.}
 
 proc abortWith*(res: Response, msg: string, code = Http404) =
   res.code = code

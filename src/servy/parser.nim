@@ -55,6 +55,22 @@ proc parseQueryParams*(content: string): Table[string, string] =
     inc consumed
     result.add(decodeUrl(key), decodeUrl(val))
 
+proc parseFormUrlEncoded*(body: string): Table[string, string] =
+  result = initTable[string, string]()
+  if body.len == 0 or "=" notin body:
+    return
+  var consumed = 0
+  while consumed < body.len:
+    if "=" notin body[consumed..^1]:
+      break
+    var key = ""
+    var val = ""
+    consumed += body.parseUntil(key, "=", consumed)
+    inc consumed
+    consumed += body.parseUntil(val, "&", consumed)
+    inc consumed
+    result.add(decodeUrl(key), decodeUrl(val))
+
 proc parseFormData*(r: var Request): FormMultiPart =
   result = initFormMultiPart()
 
@@ -62,9 +78,12 @@ proc parseFormData*(r: var Request): FormMultiPart =
   let body = r.body
 
   if "form-urlencoded" in contenttype.toLowerAscii():
-    let postBodyAsParams = parseQueryParams(body)
+    let postBodyAsParams = parseFormUrlEncoded(body)
     for k, v in postBodyAsParams.pairs:
-      r.queryParams.add(k, v)
+      var part = initFormPart()
+      part.name = k
+      part.body = v
+      result.parts.add(k, part)
 
   elif contenttype.startsWith("multipart/") and "boundary" in contenttype:
     var boundaryName = contenttype[contenttype.find("boundary=") + "boundary=".len .. ^1]
@@ -155,6 +174,7 @@ proc parseRequestFromConnection*(conn: AsyncSocket): Future[Request] {.async.} =
 
   if "?" in path:
     result.queryParams = parseQueryParams(path)
+    result.path = path[0 .. path.find('?') - 1]
 
   var line = ""
   line = $(await conn.recvLine(maxLength = maxLine))

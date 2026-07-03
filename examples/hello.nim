@@ -22,7 +22,7 @@ when isMainModule:
     echo "===================\n\n"
     return true
 
-  router.addRoute("/bye", handleHello, HttpGet, @[assertJwtFieldExists])
+  router.addRoute("/bye", handleHello, HttpGet, @[assertJWTFieldExists])
 
   proc handleGreet(req: Request, res: Response): Future[void] {.async.} =
     res.code = Http200
