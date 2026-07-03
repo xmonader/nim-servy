@@ -839,6 +839,8 @@ proc newStaticMiddleware*(dir: string, onRoute="/public"): proc(request: Request
         let m = newMimetypes()
 
         let (parentName, dirName, ext) = splitFile(thepath)
+        discard parentName
+        discard dirName
         response.headers["Content-Type"] = m.getMimetype(ext)
         response.content = readFile(dir / thepath)
         return false
@@ -921,28 +923,27 @@ proc handshake*(ws: WebSocket, headers: HttpHeaders) {.async.} =
   ws.readyState = Open
 
 proc newServyWebSocket*(req: Request): Future[WebSocket] {.async.} =
-  ## Creates a new socket from an httpbeast request.
+  ## Creates a new WebSocket from an HTTP request.
   try:
-      let headers = req.headers
-  
-      if not headers.hasKey("Sec-WebSocket-Version"):
-        discard req.asyncSock.send(formatResponse(Http404, HttpVer11, "Not Found", headers))
-        raise newException(WebSocketError, "Not a valid websocket handshake.")
-  
-      var ws = WebSocket()
-      ws.masked = false
-  
-      let fd = req.asyncSock.getFd
-      ws.tcpSocket = newAsyncSocket(fd.AsyncFD)
-      await ws.handshake(headers)
-      return ws
-  
+    let headers = req.headers
+
+    if not headers.hasKey("Sec-WebSocket-Version"):
+      discard req.asyncSock.send(formatResponse(Http404, HttpVer11, "Not Found", headers))
+      raise newException(WebSocketError, "Not a valid websocket handshake.")
+
+    var ws = WebSocket()
+    ws.masked = false
+
+    let fd = req.asyncSock.getFd
+    ws.tcpSocket = newAsyncSocket(fd.AsyncFD)
+    await ws.handshake(headers)
+    return ws
+
   except ValueError, KeyError:
-      # Wrap all exceptions in a WebSocketError so its easy to catch
-      raise newException(
+    raise newException(
       WebSocketError, 
       "Failed to create WebSocket from request: " & getCurrentExceptionMsg()
-      )
+    )
 
 when isMainModule:
 
