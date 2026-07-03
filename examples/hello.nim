@@ -1,5 +1,4 @@
 import servy
-import ws
 import strformat, tables, asyncdispatch, asyncnet, os
 
 when isMainModule:
