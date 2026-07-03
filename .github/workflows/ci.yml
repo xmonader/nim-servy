@@ -24,6 +24,9 @@ jobs:
       - name: Install dependencies
         run: nimble install -y --depsOnly
 
+      - name: Install websocket-client
+        run: pip install websocket-client
+
       - name: Build
         run: make build
 

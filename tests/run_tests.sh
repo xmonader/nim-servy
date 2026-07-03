@@ -163,12 +163,12 @@ try:
 except Exception as e:
     print('FAIL: ' + str(e))
     sys.exit(1)
-" 2>/dev/null)
+" 2>/dev/null) || true
 
 if [ "$WS_RESULT" = "PASS" ]; then
   pass "WebSocket handshake + echo"
 else
-  fail "WebSocket handshake + echo" "PASS" "$WS_RESULT"
+  fail "WebSocket handshake + echo" "PASS" "${WS_RESULT:-websocket-client not installed}"
 fi
 
 # Cleanup
