@@ -1,5 +1,5 @@
 import asyncdispatch, asyncnet, strformat, net
-import types, router, parser, response
+import servy/types, servy/router, servy/parser, servy/response
 
 type ServerOptions* = object
   address*: string

@@ -1,5 +1,5 @@
 import strutils, os, mimetypes, asyncdispatch, strformat, tables, base64
-import types
+import servy/types
 
 proc loggingMiddleware*(request: Request, response: Response): Future[bool] {.async.} =
   let path = request.path

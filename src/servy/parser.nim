@@ -1,5 +1,5 @@
 import strutils, tables, parseutils, options, asyncnet, asyncdispatch, cgi, strformat
-import types
+import servy/types
 
 const maxLine* = 8 * 1024
 

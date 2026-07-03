@@ -1,4 +1,4 @@
-import types, router, parser, response, server, middleware, websocket
+import servy/types, servy/router, servy/parser, servy/response, servy/server, servy/middleware, servy/websocket
 
 export types
 export router

@@ -1,5 +1,5 @@
-import asyncdispatch, asyncnet, base64, std/sha1, strutils, strformat
-import types, response
+import asyncdispatch, asyncnet, base64, std/sha1, strutils, strformat, ws
+import servy/types, servy/response
 
 proc handshake*(ws: WebSocket, headers: HttpHeaders) {.async.} =
   ws.version = parseInt(headers["Sec-WebSocket-Version"][0])
@@ -29,7 +29,7 @@ proc newServyWebSocket*(req: Request): Future[WebSocket] {.async.} =
 
     if not headers.hasKey("Sec-WebSocket-Version"):
       discard req.asyncSock.send(formatResponse(Http404, HttpVer11, "Not Found", headers))
-      raise newException(WebSocketHandshakeError, "Not a valid websocket handshake.")
+      raise newException(HandshakeError, "Not a valid websocket handshake.")
 
     var ws = WebSocket()
     ws.masked = false
@@ -41,6 +41,6 @@ proc newServyWebSocket*(req: Request): Future[WebSocket] {.async.} =
 
   except ValueError, KeyError:
     raise newException(
-      WebSocketHandshakeError,
+      HandshakeError,
       "Failed to create WebSocket from request: " & getCurrentExceptionMsg()
     )

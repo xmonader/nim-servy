@@ -1,4 +1,4 @@
-import tables, asyncnet, options
+import tables, asyncnet, options, strutils, strformat, asyncdispatch, net
 
 type
   HttpVersion* = enum
@@ -128,7 +128,7 @@ type
   ServyError* = object of CatchableError
   RoutingError* = object of ServyError
   ParseError* = object of ServyError
-  WebSocketHandshakeError* = object of ServyError
+  HandshakeError* = object of ServyError
 
 type HttpHeaders* = ref object
   table*: TableRef[string, seq[string]]
@@ -333,5 +333,3 @@ proc port*(req: Request): int =
 
 proc host*(req: Request): string =
   req.headers.getOrDefault("HOST")[0]
-
-import strformat

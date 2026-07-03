@@ -1,5 +1,5 @@
-import strformat
-import types
+import strformat, strutils
+import servy/types
 
 proc formatStatusLine*(code: HttpCode, httpver: HttpVersion): string =
   return fmt"{httpver} {code}" & "\r\n"

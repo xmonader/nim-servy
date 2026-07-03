@@ -1,5 +1,6 @@
 import servy
-import strformat, tables, asyncdispatch, asyncnet
+import ws
+import strformat, tables, asyncdispatch, asyncnet, os
 
 when isMainModule:
   var router = initRouter()
