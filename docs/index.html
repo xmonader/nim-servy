@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>servy - Nim Web Framework</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --fg: #c9d1d9;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --border: #30363d;
+      --surface: #161b22;
+      --muted: #8b949e;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.6;
+    }
+    .container { max-width: 900px; margin: 0 auto; padding: 0 24px; }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 48px 0 32px;
+      text-align: center;
+    }
+    h1 {
+      font-size: 3rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    h1 span { color: var(--green); }
+    .tagline {
+      font-size: 1.2rem;
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+    .badges a {
+      display: inline-block;
+      margin: 0 6px;
+      padding: 4px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--fg);
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+    .badges a:hover { border-color: var(--accent); }
+    nav {
+      border-bottom: 1px solid var(--border);
+      padding: 16px 0;
+      text-align: center;
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 10;
+    }
+    nav a {
+      color: var(--muted);
+      text-decoration: none;
+      margin: 0 16px;
+      font-size: 0.95rem;
+    }
+    nav a:hover { color: var(--accent); }
+    section { padding: 48px 0; }
+    h2 {
+      font-size: 1.8rem;
+      margin-bottom: 16px;
+      color: var(--fg);
+    }
+    h3 {
+      font-size: 1.3rem;
+      margin: 24px 0 12px;
+      color: var(--fg);
+    }
+    p { margin-bottom: 16px; }
+    pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      overflow-x: auto;
+      margin-bottom: 20px;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+    code {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      color: var(--fg);
+    }
+    .inline-code {
+      background: var(--surface);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+      margin: 24px 0;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .feature-card h4 {
+      color: var(--green);
+      margin-bottom: 8px;
+      font-size: 1rem;
+    }
+    .feature-card p {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin: 0;
+    }
+    .kw { color: #ff7b72; }
+    .str { color: #a5d6ff; }
+    .fn { color: #d2a8ff; }
+    .cmt { color: #8b949e; }
+    .typ { color: #79c0ff; }
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 0;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1><span>nim</span>-servy</h1>
+      <p class="tagline">A lightweight async web framework for Nim</p>
+      <div class="badges">
+        <a href="https://github.com/xmonader/nim-servy">GitHub</a>
+        <a href="https://github.com/xmonader/nim-servy/blob/master/README.md">Docs</a>
+        <a href="https://nim-lang.org/">Nim 2.x</a>
+      </div>
+    </div>
+  </header>
+
+  <nav>
+    <div class="container">
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="#quickstart">Quickstart</a>
+      <a href="#routing">Routing</a>
+      <a href="#middleware">Middleware</a>
+      <a href="#websocket">WebSocket</a>
+    </div>
+  </nav>
+
+  <section id="features">
+    <div class="container">
+      <h2>Features</h2>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <h4>Async First</h4>
+          <p>Built on Nim's asyncdispatch. All handlers and middleware are async by default.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Zero Dependencies</h4>
+          <p>Only depends on terminaltables. WebSocket support built from scratch.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Route Parameters</h4>
+          <p>Capture URL segments with <code>:param</code> syntax. Access via <code>req.urlParams</code>.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Form Data</h4>
+          <p>Parse URL-encoded and multipart form bodies automatically.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Middleware</h4>
+          <p>Per-route or global middleware. Built-in logging, static files, and basic auth.</p>
+        </div>
+        <div class="feature-card">
+          <h4>WebSocket</h4>
+          <p>Full WebSocket support with handshake, framing, and echo. No external deps.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="container">
+      <h2>Installation</h2>
+      <pre><code>nimble install servy</code></pre>
+    </div>
+  </section>
+
+  <section id="quickstart">
+    <div class="container">
+      <h2>Quickstart</h2>
+      <pre><code><span class="kw">import</span> servy
+
+<span class="kw">when</span> isMainModule:
+  <span class="kw">var</span> router = <span class="fn">initRouter</span>()
+
+  <span class="kw">proc</span> <span class="fn">handleHello</span>(req: <span class="typ">Request</span>, res: <span class="typ">Response</span>): <span class="typ">Future</span>[<span class="typ">void</span>] {.async.} =
+    res.code = Http200
+    res.content = <span class="str">"hello world!"</span>
+
+  router.<span class="fn">addRoute</span>(<span class="str">"/hello"</span>, handleHello)
+
+  <span class="kw">let</span> opts = <span class="typ">ServerOptions</span>(address: <span class="str">"127.0.0.1"</span>, port: 9000.<span class="typ">Port</span>)
+  <span class="kw">var</span> s = <span class="fn">initServy</span>(opts, router)
+  s.<span class="fn">run</span>()</code></pre>
+      <p>Visit <code class="inline-code">http://localhost:9000/hello</code></p>
+    </div>
+  </section>
+
+  <section id="routing">
+    <div class="container">
+      <h2>Routing</h2>
+
+      <h3>Basic routes</h3>
+      <pre><code>router.<span class="fn">addRoute</span>(<span class="str">"/"</span>, handleIndex)
+router.<span class="fn">addRoute</span>(<span class="str">"/get"</span>, handleGet, HttpGet)
+router.<span class="fn">addRoute</span>(<span class="str">"/post"</span>, handlePost, HttpPost)</code></pre>
+
+      <h3>URL parameters</h3>
+      <pre><code><span class="cmt"># /user/:user captures the segment into req.urlParams["user"]</span>
+router.<span class="fn">addRoute</span>(<span class="str">"/user/:user"</span>, handleUser)
+router.<span class="fn">addRoute</span>(<span class="str">"/multi/:first/:second"</span>, handleMultiParam)</code></pre>
+
+      <h3>Query parameters</h3>
+      <pre><code><span class="cmt"># GET /query?page=1&limit=10</span>
+<span class="cmt"># req.queryParams["page"] == "1"</span>
+router.<span class="fn">addRoute</span>(<span class="str">"/query"</span>, handleQuery)</code></pre>
+
+      <h3>Form data</h3>
+      <pre><code><span class="cmt"># POST with application/x-www-form-urlencoded</span>
+<span class="kw">proc</span> <span class="fn">handleForm</span>(req: <span class="typ">Request</span>, res: <span class="typ">Response</span>): <span class="typ">Future</span>[<span class="typ">void</span>] {.async.} =
+  <span class="kw">let</span> user = req.formData.<span class="fn">getValueOrNone</span>(<span class="str">"username"</span>)
+  res.content = <span class="str">"user="</span> & user.<span class="fn">get</span>(<span class="str">""</span>)
+
+router.<span class="fn">addRoute</span>(<span class="str">"/login"</span>, handleForm, HttpPost)</code></pre>
+    </div>
+  </section>
+
+  <section id="middleware">
+    <div class="container">
+      <h2>Middleware</h2>
+      <p>Middleware procs return <code class="inline-code">Future[bool]</code>. Return <code class="inline-code">true</code> to continue, <code class="inline-code">false</code> to short-circuit.</p>
+
+      <h3>Per-route middleware</h3>
+      <pre><code><span class="kw">let</span> users = {<span class="str">"admin"</span>: <span class="str">"secret"</span>}.toTable
+router.<span class="fn">addRoute</span>(<span class="str">"/admin"</span>, handleAdmin, HttpGet, @[
+  <span class="fn">basicAuth</span>(users)
+])</code></pre>
+
+      <h3>Global middleware</h3>
+      <pre><code><span class="kw">var</span> s = <span class="fn">initServy</span>(opts, router, @[
+  loggingMiddleware,
+  trimTrailingSlash,
+  <span class="fn">newStaticMiddleware</span>(<span class="str">"public"</span>, <span class="str">"/static"</span>)
+])</code></pre>
+
+      <h3>Built-in middleware</h3>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <h4>loggingMiddleware</h4>
+          <p>Logs request method and path.</p>
+        </div>
+        <div class="feature-card">
+          <h4>trimTrailingSlash</h4>
+          <p>Strips trailing slashes from request path.</p>
+        </div>
+        <div class="feature-card">
+          <h4>newStaticMiddleware</h4>
+          <p>Serves static files from a directory.</p>
+        </div>
+        <div class="feature-card">
+          <h4>basicAuth</h4>
+          <p>HTTP Basic Authentication with user/password table.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="websocket">
+    <div class="container">
+      <h2>WebSocket</h2>
+      <p>Built-in WebSocket support with handshake, framing, and ping/pong handling.</p>
+      <pre><code><span class="kw">proc</span> <span class="fn">handleWS</span>(req: <span class="typ">Request</span>, res: <span class="typ">Response</span>): <span class="typ">Future</span>[<span class="typ">void</span>] {.async.} =
+  <span class="kw">var</span> ws = <span class="kw">await</span> <span class="fn">newServyWebSocket</span>(req)
+  <span class="kw">await</span> ws.<span class="fn">send</span>(<span class="str">"Welcome!"</span>)
+  <span class="kw">while</span> ws.readyState == Open:
+    <span class="kw">let</span> packet = <span class="kw">await</span> ws.<span class="fn">receiveStrPacket</span>()
+    <span class="kw">await</span> ws.<span class="fn">send</span>(<span class="str">"echo: "</span> & packet)
+
+router.<span class="fn">addRoute</span>(<span class="str">"/ws"</span>, handleWS, HttpGet)</code></pre>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <p>servy is maintained by <a href="https://github.com/xmonader">xmonader</a> &middot; MIT License</p>
+    </div>
+  </footer>
+</body>
+</html>
