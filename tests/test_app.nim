@@ -137,6 +137,6 @@ when isMainModule:
   let serveStatic: MiddlewareFunc = newStaticMiddleware(parentDir(currentSourcePath()) / "public", "/static")
 
   let port = parseInt(paramStr(1))
-  let opts = ServerOptions(address: "127.0.0.1", port: Port(port), debug: false)
+  let opts = newServerOptions(address = "127.0.0.1", port = port, debug = false)
   var s = initServy(opts, router, @[MiddlewareFunc(myLoggingMiddleware), serveStatic])
   s.run()

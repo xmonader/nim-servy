@@ -1,6 +1,6 @@
 # servy
 
-Servy is a fast, simple and lightweight micro web-framework for Nim, supporting Nim 2.x.
+A production-ready async web framework for Nim.
 
 ## Installation
 
@@ -17,12 +17,11 @@ when isMainModule:
   var router = initRouter()
 
   proc handleHello(req: Request, res: Response): Future[void] {.async.} =
-    res.code = Http200
-    res.content = "hello world!"
+    res.json(%*{"message": "hello world!"})
 
   router.addRoute("/hello", handleHello)
 
-  let opts = ServerOptions(address: "127.0.0.1", port: 9000.Port, debug: true)
+  let opts = newServerOptions(port = 9000)
   var s = initServy(opts, router)
   s.run()
 ```
@@ -41,91 +40,136 @@ router.addRoute("/delete", handleDelete, HttpDelete)
 
 ### URL parameters
 
-Use `:param` to capture URL segments:
-
 ```nim
 proc handleUser(req: Request, res: Response): Future[void] {.async.} =
-  res.content = "user=" & req.urlParams["user"]
+  res.json(%*{"user": req.urlParams["user"]})
 
 router.addRoute("/user/:user", handleUser)
 router.addRoute("/multi/:first/:second", handleMultiParam)
 ```
 
-Captured parameters are available in `req.urlParams`.
-
 ### Query parameters
-
-Query parameters are automatically parsed from the URL:
 
 ```nim
 proc handleQuery(req: Request, res: Response): Future[void] {.async.} =
-  for k, v in req.queryParams.pairs:
-    res.content.add(k & "=" & v & " ")
-
-router.addRoute("/query", handleQuery)
+  res.json(%*{"params": req.queryParams})
 ```
 
 Request: `GET /query?page=1&limit=10` gives `req.queryParams["page"]` = `"1"`.
 
-## Request data
+## Request/Response
 
-### Form data (URL-encoded and multipart)
+### JSON helpers
+
+```nim
+# Parse JSON body
+proc handlePost(req: Request, res: Response): Future[void] {.async.} =
+  let body = req.parseJsonBody()
+  if body.kind != JNull:
+    res.json(%*{"received": body})
+  else:
+    res.abortWith("invalid json", Http400)
+
+# Send JSON response
+res.json(%*{"status": "ok"})
+res.json(%*{"error": "not found"}, Http404)
+```
+
+### Form data
 
 ```nim
 proc handleForm(req: Request, res: Response): Future[void] {.async.} =
   let username = req.formData.getValueOrNone("username")
-  let password = req.formData.getValueOrNone("password")
-  res.content = "user=" & username.get("") & " pass=" & password.get("")
-
-router.addRoute("/login", handleForm, HttpPost)
+  res.json(%*{"user": username.get("")})
 ```
 
 ### Cookies
 
 ```nim
 proc handleCookies(req: Request, res: Response): Future[void] {.async.} =
-  for k, v in req.cookies.pairs:
-    res.content.add(k & "=" & v & " ")
-
-router.addRoute("/cookies", handleCookies)
-```
-
-### Setting response cookies
-
-```nim
-proc handleSetCookie(req: Request, res: Response): Future[void] {.async.} =
+  let session = req.cookies.getOrDefault("session", "")
   res.headers["Set-Cookie"] = "session=abc123; Path=/"
-  res.content = "cookie set"
 ```
 
-### Custom response headers
+### Response helpers
 
 ```nim
-proc handleHeaders(req: Request, res: Response): Future[void] {.async.} =
-  res.headers["X-Custom"] = "test-value"
-  res.content = "headers set"
+res.abortWith("forbidden", Http403)
+res.redirectTo("/", Http302)
+res.setHeader("X-Custom", "value")
+res.addHeader("X-Another", "value")
 ```
 
-## Response helpers
-
-### Abort (return error with status code)
+## Server options
 
 ```nim
-proc handleAbort(req: Request, res: Response): Future[void] {.async.} =
-  res.abortWith("forbidden", Http403)
+let opts = newServerOptions(
+  address = "0.0.0.0",
+  port = 8080,
+  debug = true,
+  maxBodySize = 10 * 1024 * 1024,  # 10MB body limit
+  requestTimeout = 30,              # seconds
+  keepAlive = true,
+  keepAliveTimeout = 5
+)
 ```
 
-### Redirect
-
-```nim
-proc handleRedirect(req: Request, res: Response): Future[void] {.async.} =
-  res.redirectTo("/")
-  # or with custom code: res.redirectTo("/", Http302)
-```
+- **Graceful shutdown**: SIGINT/SIGTERM handled cleanly
+- **Body size limits**: Returns 413 if request body exceeds `maxBodySize`
+- **Keep-alive**: Connection reuse controlled by `keepAlive` and `keepAliveTimeout`
+- **Error handling**: Uncaught exceptions return 500 with JSON error body
 
 ## Middleware
 
 Middleware procs return `Future[bool]`. Return `true` to continue, `false` to short-circuit.
+
+### Production middleware
+
+```nim
+import servy/middleware_prod
+
+# CORS
+let cors = newCorsMiddleware(newCorsConfig())
+
+# Rate limiting
+let limiter = newRateLimiter(limit = 100, windowSeconds = 60)
+let rateLimit = newRateLimitMiddleware(limiter)
+
+# Request ID (adds X-Request-ID header)
+let reqId = requestIdMiddleware()
+
+# Security headers (CSP, X-Frame-Options, HSTS, etc.)
+let security = newSecurityHeadersMiddleware()
+
+# Request timing (adds X-Response-Time header)
+let timing = requestTimingMiddleware()
+
+# Gzip compression (adds Content-Encoding: gzip for large responses)
+let gzip = gzipMiddleware()
+
+# Body size limit
+let bodyLimit = newRequestSizeLimitMiddleware(maxBodyBytes = 10 * 1024 * 1024)
+
+# Structured logging
+let logger = logMiddleware(level = Info)
+
+# Apache-style request logging
+let accessLog = requestLoggerMiddleware()
+```
+
+### Use in server
+
+```nim
+var s = initServy(opts, router, @[
+  reqId,
+  security,
+  cors,
+  rateLimit,
+  logger,
+  timing,
+  gzip
+])
+```
 
 ### Built-in middleware
 
@@ -133,39 +177,20 @@ Middleware procs return `Future[bool]`. Return `true` to continue, `false` to sh
 import servy/middleware
 
 # Logging
-proc loggingMiddleware*(request: Request, response: Response): Future[bool] {.async.} =
-  echo request.httpMethod, " ", request.path
-  return true
+let logging = loggingMiddleware
 
 # Trim trailing slashes
-proc trimTrailingSlash*(request: Request, response: Response): Future[bool] {.async.} =
-  if request.path.endsWith("/"):
-    request.path = request.path[0 .. ^2]
-  return true
-```
+let trimSlash = trimTrailingSlash
 
-### Static file serving
-
-```nim
+# Static files
 let serveStatic = newStaticMiddleware("/path/to/files", "/public")
-# Serves files from /path/to/files at URL prefix /public
+
+# Basic auth
+let users = {"admin": "secret"}.toTable
+let auth = basicAuth(users)
 ```
 
-### Basic authentication
-
-```nim
-import tables
-
-let users = {"admin": "secret", "user": "pass"}.toTable
-let authMiddleware = basicAuth(users)
-
-proc handleProtected(req: Request, res: Response): Future[void] {.async.} =
-  res.content = "welcome!"
-
-router.addRoute("/admin", handleProtected, HttpGet, @[authMiddleware])
-```
-
-### Custom per-route middleware
+### Custom middleware
 
 ```nim
 proc myMiddleware(req: Request, res: Response): Future[bool] {.async, closure, gcsafe.} =
@@ -179,17 +204,21 @@ proc myMiddleware(req: Request, res: Response): Future[bool] {.async, closure, g
 router.addRoute("/protected", handleGet, HttpGet, @[myMiddleware])
 ```
 
-**Important for Nim 2.x:** Local middleware procs must use `{.async, closure, gcsafe.}` pragms.
+**Nim 2.x note:** Local middleware procs must use `{.async, closure, gcsafe.}` pragmas.
 
-### Global middleware (applied to all routes)
+### Per-route vs global
 
 ```nim
-var s = initServy(opts, router, @[loggingMiddleware, trimTrailingSlash, serveStatic])
+# Per-route
+router.addRoute("/admin", handleAdmin, HttpGet, @[auth])
+
+# Global (applied to all routes)
+var s = initServy(opts, router, @[reqId, security, logging])
 ```
 
-## WebSocket support
+## WebSocket
 
-Servy integrates with [treeform/ws](https://github.com/treeform/ws):
+Built-in WebSocket support (no external dependencies):
 
 ```nim
 proc handleWS(req: Request, res: Response): Future[void] {.async.} =
@@ -209,18 +238,26 @@ ws.onmessage = (m) => console.log(m.data)
 ws.send("hello")
 ```
 
+## Health check
+
+```nim
+router.addRoute("/health", healthCheckHandler)
+# Returns {"status":"ok"} with 200
+```
+
 ## Module structure
 
 ```
 servy/
-  types.nim      # Core types (Request, Response, HandlerFunc, MiddlewareFunc)
-  router.nim     # Route matching and registration
-  parser.nim     # HTTP request parsing
-  response.nim   # Response formatting
-  middleware.nim  # Built-in middleware (logging, static, auth)
-  websocket.nim  # WebSocket integration
-  server.nim     # Server startup and request handling
-  servy.nim      # Facade that re-exports all modules
+  types.nim          # Core types, JSON helpers
+  router.nim         # Route matching
+  parser.nim         # HTTP request parsing
+  response.nim       # Response formatting
+  middleware.nim      # Basic middleware (logging, static, auth)
+  middleware_prod.nim # Production middleware (CORS, rate limit, security, etc.)
+  websocket.nim      # Built-in WebSocket
+  server.nim         # Server, graceful shutdown, timeouts
+  servy.nim          # Facade
 ```
 
 ## Running
@@ -231,15 +268,20 @@ nim c -r examples/hello.nim
 nimble run servy
 ```
 
-Then visit `http://localhost:9000/hello`.
+## Testing
+
+```bash
+make test    # Run 24 tests
+make build   # Build all
+```
 
 ## Curl examples
 
 ```bash
 curl localhost:9000/hello
 curl localhost:9000/user/alice
-curl localhost:9000/multi/foo/bar
-curl -X POST -d "username=john&password=doe" localhost:9000/login
+curl -X POST -d '{"name":"john"}' -H "Content-Type: application/json" localhost:9000/api
 curl -b "session=xyz" localhost:9000/cookies
 curl -H "Authorization: Basic YWRtaW46c2VjcmV0" localhost:9000/admin
+curl localhost:9000/health
 ```

@@ -62,8 +62,8 @@
     nav a {
       color: var(--muted);
       text-decoration: none;
-      margin: 0 16px;
-      font-size: 0.95rem;
+      margin: 0 12px;
+      font-size: 0.9rem;
     }
     nav a:hover { color: var(--accent); }
     section { padding: 48px 0; }
@@ -85,7 +85,7 @@
       padding: 20px;
       overflow-x: auto;
       margin-bottom: 20px;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       line-height: 1.5;
     }
     code {
@@ -100,7 +100,7 @@
     }
     .feature-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 16px;
       margin: 24px 0;
     }
@@ -117,7 +117,7 @@
     }
     .feature-card p {
       color: var(--muted);
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       margin: 0;
     }
     .kw { color: #ff7b72; }
@@ -140,7 +140,7 @@
   <header>
     <div class="container">
       <h1><span>nim</span>-servy</h1>
-      <p class="tagline">A lightweight async web framework for Nim</p>
+      <p class="tagline">Production-ready async web framework for Nim</p>
       <div class="badges">
         <a href="https://github.com/xmonader/nim-servy">GitHub</a>
         <a href="https://github.com/xmonader/nim-servy/blob/master/README.md">Docs</a>
@@ -152,10 +152,11 @@
   <nav>
     <div class="container">
       <a href="#features">Features</a>
-      <a href="#install">Install</a>
       <a href="#quickstart">Quickstart</a>
       <a href="#routing">Routing</a>
+      <a href="#json">JSON</a>
       <a href="#middleware">Middleware</a>
+      <a href="#server">Server</a>
       <a href="#websocket">WebSocket</a>
     </div>
   </nav>
@@ -165,37 +166,54 @@
       <h2>Features</h2>
       <div class="feature-grid">
         <div class="feature-card">
-          <h4>Async First</h4>
-          <p>Built on Nim's asyncdispatch. All handlers and middleware are async by default.</p>
+          <h4>JSON First</h4>
+          <p>Built-in <code>req.parseJsonBody()</code> and <code>res.json(data)</code> helpers.</p>
         </div>
         <div class="feature-card">
-          <h4>Zero Dependencies</h4>
-          <p>Only depends on terminaltables. WebSocket support built from scratch.</p>
+          <h4>CORS</h4>
+          <p>Configurable CORS middleware with origins, methods, headers, credentials.</p>
         </div>
         <div class="feature-card">
-          <h4>Route Parameters</h4>
-          <p>Capture URL segments with <code>:param</code> syntax. Access via <code>req.urlParams</code>.</p>
+          <h4>Rate Limiting</h4>
+          <p>Per-IP rate limiting with configurable window and limits.</p>
         </div>
         <div class="feature-card">
-          <h4>Form Data</h4>
-          <p>Parse URL-encoded and multipart form bodies automatically.</p>
+          <h4>Security Headers</h4>
+          <p>CSP, X-Frame-Options, HSTS, X-Content-Type-Options, Referrer-Policy.</p>
         </div>
         <div class="feature-card">
-          <h4>Middleware</h4>
-          <p>Per-route or global middleware. Built-in logging, static files, and basic auth.</p>
+          <h4>Request ID</h4>
+          <p>Auto-generate or pass-through X-Request-ID for tracing.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Request Timing</h4>
+          <p>X-Response-Time header on every response.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Body Size Limits</h4>
+          <p>Reject oversized request bodies with 413 error.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Graceful Shutdown</h4>
+          <p>SIGINT/SIGTERM handled cleanly, existing requests finish.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Keep-Alive</h4>
+          <p>Connection reuse with configurable timeout.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Error Handling</h4>
+          <p>Uncaught exceptions return 500 JSON, not crash.</p>
         </div>
         <div class="feature-card">
           <h4>WebSocket</h4>
-          <p>Full WebSocket support with handshake, framing, and echo. No external deps.</p>
+          <p>Full WebSocket support built from scratch. Zero deps.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Health Check</h4>
+          <p>Built-in <code>/health</code> endpoint returning <code>{"status":"ok"}</code>.</p>
         </div>
       </div>
-    </div>
-  </section>
-
-  <section id="install">
-    <div class="container">
-      <h2>Installation</h2>
-      <pre><code>nimble install servy</code></pre>
     </div>
   </section>
 
@@ -208,97 +226,122 @@
   <span class="kw">var</span> router = <span class="fn">initRouter</span>()
 
   <span class="kw">proc</span> <span class="fn">handleHello</span>(req: <span class="typ">Request</span>, res: <span class="typ">Response</span>): <span class="typ">Future</span>[<span class="typ">void</span>] {.async.} =
-    res.code = Http200
-    res.content = <span class="str">"hello world!"</span>
+    res.<span class="fn">json</span>(%*{<span class="str">"message"</span>: <span class="str">"hello world!"</span>})
 
   router.<span class="fn">addRoute</span>(<span class="str">"/hello"</span>, handleHello)
 
-  <span class="kw">let</span> opts = <span class="typ">ServerOptions</span>(address: <span class="str">"127.0.0.1"</span>, port: 9000.<span class="typ">Port</span>)
+  <span class="kw">let</span> opts = <span class="fn">newServerOptions</span>(port = 9000)
   <span class="kw">var</span> s = <span class="fn">initServy</span>(opts, router)
   s.<span class="fn">run</span>()</code></pre>
-      <p>Visit <code class="inline-code">http://localhost:9000/hello</code></p>
     </div>
   </section>
 
   <section id="routing">
     <div class="container">
       <h2>Routing</h2>
+      <pre><code>router.<span class="fn">addRoute</span>(<span class="str">"/user/:user"</span>, handleUser)
+router.<span class="fn">addRoute</span>(<span class="str">"/multi/:first/:second"</span>, handleMulti)
+router.<span class="fn">addRoute</span>(<span class="str">"/api"</span>, handleApi, HttpPost)</code></pre>
+      <p>Captured params: <code class="inline-code">req.urlParams["user"]</code></p>
+      <p>Query params: <code class="inline-code">req.queryParams["page"]</code></p>
+    </div>
+  </section>
 
-      <h3>Basic routes</h3>
-      <pre><code>router.<span class="fn">addRoute</span>(<span class="str">"/"</span>, handleIndex)
-router.<span class="fn">addRoute</span>(<span class="str">"/get"</span>, handleGet, HttpGet)
-router.<span class="fn">addRoute</span>(<span class="str">"/post"</span>, handlePost, HttpPost)</code></pre>
+  <section id="json">
+    <div class="container">
+      <h2>JSON</h2>
+      <pre><code><span class="cmt"># Parse request body</span>
+<span class="kw">let</span> body = req.<span class="fn">parseJsonBody</span>()
 
-      <h3>URL parameters</h3>
-      <pre><code><span class="cmt"># /user/:user captures the segment into req.urlParams["user"]</span>
-router.<span class="fn">addRoute</span>(<span class="str">"/user/:user"</span>, handleUser)
-router.<span class="fn">addRoute</span>(<span class="str">"/multi/:first/:second"</span>, handleMultiParam)</code></pre>
-
-      <h3>Query parameters</h3>
-      <pre><code><span class="cmt"># GET /query?page=1&limit=10</span>
-<span class="cmt"># req.queryParams["page"] == "1"</span>
-router.<span class="fn">addRoute</span>(<span class="str">"/query"</span>, handleQuery)</code></pre>
-
-      <h3>Form data</h3>
-      <pre><code><span class="cmt"># POST with application/x-www-form-urlencoded</span>
-<span class="kw">proc</span> <span class="fn">handleForm</span>(req: <span class="typ">Request</span>, res: <span class="typ">Response</span>): <span class="typ">Future</span>[<span class="typ">void</span>] {.async.} =
-  <span class="kw">let</span> user = req.formData.<span class="fn">getValueOrNone</span>(<span class="str">"username"</span>)
-  res.content = <span class="str">"user="</span> & user.<span class="fn">get</span>(<span class="str">""</span>)
-
-router.<span class="fn">addRoute</span>(<span class="str">"/login"</span>, handleForm, HttpPost)</code></pre>
+<span class="cmt"># Send JSON response</span>
+res.<span class="fn">json</span>(%*{<span class="str">"status"</span>: <span class="str">"ok"</span>})
+res.<span class="fn">json</span>(%*{<span class="str">"error"</span>: <span class="str">"not found"</span>}, Http404)</code></pre>
     </div>
   </section>
 
   <section id="middleware">
     <div class="container">
       <h2>Middleware</h2>
-      <p>Middleware procs return <code class="inline-code">Future[bool]</code>. Return <code class="inline-code">true</code> to continue, <code class="inline-code">false</code> to short-circuit.</p>
+      <p>Production middleware included out of the box:</p>
+      <pre><code><span class="kw">import</span> servy/middleware_prod
 
-      <h3>Per-route middleware</h3>
-      <pre><code><span class="kw">let</span> users = {<span class="str">"admin"</span>: <span class="str">"secret"</span>}.toTable
-router.<span class="fn">addRoute</span>(<span class="str">"/admin"</span>, handleAdmin, HttpGet, @[
-  <span class="fn">basicAuth</span>(users)
-])</code></pre>
+<span class="kw">let</span> cors = <span class="fn">newCorsMiddleware</span>()
+<span class="kw">let</span> limiter = <span class="fn">newRateLimiter</span>(limit = 100, windowSeconds = 60)
+<span class="kw">let</span> security = <span class="fn">newSecurityHeadersMiddleware</span>()
+<span class="kw">let</span> reqId = <span class="fn">requestIdMiddleware</span>()
+<span class="kw">let</span> timing = <span class="fn">requestTimingMiddleware</span>()
+<span class="kw">let</span> gzip = <span class="fn">gzipMiddleware</span>()
 
-      <h3>Global middleware</h3>
-      <pre><code><span class="kw">var</span> s = <span class="fn">initServy</span>(opts, router, @[
-  loggingMiddleware,
-  trimTrailingSlash,
-  <span class="fn">newStaticMiddleware</span>(<span class="str">"public"</span>, <span class="str">"/static"</span>)
-])</code></pre>
+<span class="kw">var</span> s = <span class="fn">initServy</span>(opts, router, @[reqId, security, cors, timing])</code></pre>
 
-      <h3>Built-in middleware</h3>
       <div class="feature-grid">
         <div class="feature-card">
-          <h4>loggingMiddleware</h4>
-          <p>Logs request method and path.</p>
+          <h4>newCorsMiddleware</h4>
+          <p>Configurable origins, methods, headers, credentials.</p>
         </div>
         <div class="feature-card">
-          <h4>trimTrailingSlash</h4>
-          <p>Strips trailing slashes from request path.</p>
+          <h4>newRateLimitMiddleware</h4>
+          <p>Per-IP rate limiting with sliding window.</p>
         </div>
         <div class="feature-card">
-          <h4>newStaticMiddleware</h4>
-          <p>Serves static files from a directory.</p>
+          <h4>newSecurityHeadersMiddleware</h4>
+          <p>CSP, HSTS, X-Frame-Options, X-XSS-Protection.</p>
         </div>
         <div class="feature-card">
-          <h4>basicAuth</h4>
-          <p>HTTP Basic Authentication with user/password table.</p>
+          <h4>requestIdMiddleware</h4>
+          <p>X-Request-ID header for distributed tracing.</p>
+        </div>
+        <div class="feature-card">
+          <h4>requestTimingMiddleware</h4>
+          <p>X-Response-Time header.</p>
+        </div>
+        <div class="feature-card">
+          <h4>gzipMiddleware</h4>
+          <p>Content-Encoding for large responses.</p>
+        </div>
+        <div class="feature-card">
+          <h4>newRequestSizeLimitMiddleware</h4>
+          <p>413 error for oversized bodies.</p>
+        </div>
+        <div class="feature-card">
+          <h4>requestLoggerMiddleware</h4>
+          <p>Apache-style access logs.</p>
         </div>
       </div>
+    </div>
+  </section>
+
+  <section id="server">
+    <div class="container">
+      <h2>Server</h2>
+      <pre><code><span class="kw">let</span> opts = <span class="fn">newServerOptions</span>(
+  address = <span class="str">"0.0.0.0"</span>,
+  port = 8080,
+  debug = true,
+  maxBodySize = 10 * 1024 * 1024,
+  requestTimeout = 30,
+  keepAlive = true
+)</code></pre>
+      <ul style="margin-left:20px;color:var(--muted)">
+        <li>Graceful shutdown on SIGINT/SIGTERM</li>
+        <li>Body size limits (413 error)</li>
+        <li>Keep-alive connection reuse</li>
+        <li>Error handling (500 JSON response)</li>
+        <li>Response timing header</li>
+      </ul>
     </div>
   </section>
 
   <section id="websocket">
     <div class="container">
       <h2>WebSocket</h2>
-      <p>Built-in WebSocket support with handshake, framing, and ping/pong handling.</p>
+      <p>Built-in. No external dependencies.</p>
       <pre><code><span class="kw">proc</span> <span class="fn">handleWS</span>(req: <span class="typ">Request</span>, res: <span class="typ">Response</span>): <span class="typ">Future</span>[<span class="typ">void</span>] {.async.} =
   <span class="kw">var</span> ws = <span class="kw">await</span> <span class="fn">newServyWebSocket</span>(req)
   <span class="kw">await</span> ws.<span class="fn">send</span>(<span class="str">"Welcome!"</span>)
   <span class="kw">while</span> ws.readyState == Open:
-    <span class="kw">let</span> packet = <span class="kw">await</span> ws.<span class="fn">receiveStrPacket</span>()
-    <span class="kw">await</span> ws.<span class="fn">send</span>(<span class="str">"echo: "</span> & packet)
+    <span class="kw">let</span> msg = <span class="kw">await</span> ws.<span class="fn">receiveStrPacket</span>()
+    <span class="kw">await</span> ws.<span class="fn">send</span>(<span class="str">"echo: "</span> & msg)
 
 router.<span class="fn">addRoute</span>(<span class="str">"/ws"</span>, handleWS, HttpGet)</code></pre>
     </div>

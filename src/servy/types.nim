@@ -1,4 +1,4 @@
-import tables, asyncnet, options, strutils, strformat, asyncdispatch, net
+import tables, asyncnet, options, strutils, strformat, asyncdispatch, net, json
 
 type
   HttpVersion* = enum
@@ -334,3 +334,25 @@ proc port*(req: Request): int =
 
 proc host*(req: Request): string =
   req.headers.getOrDefault("HOST")[0]
+
+proc parseJsonBody*(req: Request): JsonNode =
+  try:
+    return parseJson(req.body)
+  except JsonParsingError:
+    return newJNull()
+
+proc json*(res: Response, data: JsonNode, code: HttpCode = Http200) =
+  res.code = code
+  res.headers["Content-Type"] = "application/json"
+  res.content = $data
+
+proc json*(res: Response, data: string, code: HttpCode = Http200) =
+  res.code = code
+  res.headers["Content-Type"] = "application/json"
+  res.content = data
+
+proc setHeader*(res: Response, key, value: string) =
+  res.headers[key] = value
+
+proc addHeader*(res: Response, key, value: string) =
+  res.headers.add(key, value)

@@ -173,6 +173,8 @@ fi
 
 # Cleanup
 kill $SERVER_PID 2>/dev/null || true
+sleep 1
+kill -9 $SERVER_PID 2>/dev/null || true
 wait $SERVER_PID 2>/dev/null || true
 rm -f $TEST_APP
 
