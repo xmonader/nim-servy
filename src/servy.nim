@@ -641,23 +641,32 @@ proc parseRequestFromConnection*(s: Servy, conn:AsyncSocket): Future[Request] {.
     result = Request.new
     result.asyncSock = conn
     let requestline = $await conn.recvLine(maxLength=maxLine)
-    var  meth, path, httpver: string
+    
+    if requestline.len == 0:
+      raise newException(OSError, "empty request line")
+    
     var parts = requestLine.splitWhitespace()
+    if parts.len < 3:
+      raise newException(OSError, "invalid request line: " & requestline)
+    
+    var meth, path, httpver: string
     meth = parts[0]
     path = parts[1]
     httpver = parts[2]
     var contentLength = 0
-    # echo meth, path, httpver
+    
     let m = httpMethodFromString(meth)
     if m.isSome:
         result.httpMethod = m.get()
     else:
-        # echo meth
         raise newException(OSError, "invalid httpmethod " & meth)
+    
     if "1.1" in httpver:
         result.httpVersion = HttpVer11
     elif "1.0" in httpver:
         result.httpVersion = HttpVer10
+    else:
+        raise newException(OSError, "unsupported HTTP version: " & httpver)
 
     result.path = path
     result.headers = newHttpHeaders()
@@ -685,13 +694,18 @@ proc parseRequestFromConnection*(s: Servy, conn:AsyncSocket): Future[Request] {.
         kv = parseHeader(line)
       result.headers[kv.key] = kv.value
       if kv.key.toLowerAscii == "content-length":
-        contentLength = parseInt(kv.value[0])
+        try:
+          contentLength = parseInt(kv.value[0])
+        except ValueError:
+          contentLength = 0
       if kv.key.toLowerAscii == "cookie":
         for cookieinfo in kv.value:
-          let theparts = cookieinfo.split({'='})
-          let cookiename = theparts[0]
-          let cookieval = theparts[1]
-          result.cookies[cookiename] = cookieval
+          let theparts = cookieinfo.split({'='}, maxsplit=1)
+          if theparts.len == 2:
+            let cookiename = theparts[0].strip()
+            let cookieval = theparts[1].strip()
+            if cookiename.len > 0:
+              result.cookies[cookiename] = cookieval
       line = $(await conn.recvLine(maxLength=maxLine))
       # echo fmt"line: >{line}< "
 
